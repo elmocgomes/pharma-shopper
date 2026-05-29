@@ -13,12 +13,16 @@ RUN pnpm --filter @pharma-shopper/shared build && \
 FROM base AS runner
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/package.json ./apps/api/
+COPY --from=build /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 COPY --from=build /app/packages/shared/package.json ./packages/shared/
+COPY --from=build /app/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=build /app/packages/db/dist ./packages/db/dist
 COPY --from=build /app/packages/db/package.json ./packages/db/
+COPY --from=build /app/packages/db/node_modules ./packages/db/node_modules
 COPY --from=build /app/packages/wa-client/dist ./packages/wa-client/dist
 COPY --from=build /app/packages/wa-client/package.json ./packages/wa-client/
+COPY --from=build /app/packages/wa-client/node_modules ./packages/wa-client/node_modules
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
 COPY --from=build /app/pnpm-workspace.yaml ./
