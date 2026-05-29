@@ -3,6 +3,7 @@ import {
   uuid,
   text,
   integer,
+  boolean,
   timestamp,
   jsonb,
   index,
@@ -22,6 +23,11 @@ export const conversationStatusEnum = pgEnum("conversation_status", [
   "completed",
   "failed",
   "timeout",
+]);
+
+export const conversationPhaseEnum = pgEnum("conversation_phase", [
+  "phase1_branded",
+  "phase2_alternatives",
 ]);
 
 export const messageDirectionEnum = pgEnum("message_direction", [
@@ -50,6 +56,8 @@ export const conversations = pgTable(
     waSessionId: uuid("wa_session_id").references(() => waSessions.id),
     personaId: uuid("persona_id").references(() => personas.id),
     status: conversationStatusEnum("status").notNull().default("pending"),
+    phase: conversationPhaseEnum("phase").notNull().default("phase1_branded"),
+    spontaneousSubstitution: boolean("spontaneous_substitution"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),

@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, User, Bot, Clock, DollarSign, Package } from "lucide-react";
+import { ArrowLeft, User, Bot, Clock, DollarSign, Package, Layers, ArrowRightLeft } from "lucide-react";
 import { api } from "../lib/api";
 import { cn } from "../lib/utils";
 
@@ -17,6 +17,8 @@ interface Message {
 interface ConversationData {
   id: string;
   status: string;
+  phase: string | null;
+  spontaneousSubstitution: boolean | null;
   startedAt: string | null;
   completedAt: string | null;
   retryCount: number;
@@ -30,9 +32,33 @@ interface PriceRecord {
   availability: string;
   brand: string | null;
   isGeneric: boolean;
+  substitutionType: string | null;
+  dosage: string | null;
+  quantity: string | null;
+  presentation: string | null;
+  conversationPhase: string | null;
   notes: string | null;
   product: { name: string; activeIngredient: string | null };
 }
+
+const phaseLabels: Record<string, string> = {
+  phase1_branded: "Fase 1 — Produto de marca",
+  phase2_alternatives: "Fase 2 — Genéricos/Alternativas",
+};
+
+const substitutionLabels: Record<string, string> = {
+  requested: "Solicitado",
+  spontaneous: "Espontâneo",
+  prompted: "Provocado",
+  not_offered: "Não oferecido",
+};
+
+const substitutionColors: Record<string, string> = {
+  requested: "bg-blue-100 text-blue-700",
+  spontaneous: "bg-emerald-100 text-emerald-700",
+  prompted: "bg-amber-100 text-amber-700",
+  not_offered: "bg-gray-100 text-gray-600",
+};
 
 const statusLabels: Record<string, string> = {
   pending: "Pendente",
@@ -121,11 +147,30 @@ export function ConversationThreadPage() {
         )}
       </div>
 
-      {/* Timeline */}
-      <div className="flex items-center gap-3 text-xs text-gray-500">
-        <Clock className="w-3 h-3" />
-        {conv.startedAt && <span>Inicio: {new Date(conv.startedAt).toLocaleString("pt-BR")}</span>}
-        {conv.completedAt && <span>- Fim: {new Date(conv.completedAt).toLocaleString("pt-BR")}</span>}
+      {/* Phase & Substitution Info */}
+      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+        <div className="flex items-center gap-1">
+          <Clock className="w-3 h-3" />
+          {conv.startedAt && <span>Inicio: {new Date(conv.startedAt).toLocaleString("pt-BR")}</span>}
+          {conv.completedAt && <span>- Fim: {new Date(conv.completedAt).toLocaleString("pt-BR")}</span>}
+        </div>
+        {conv.phase && (
+          <div className="flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full">
+            <Layers className="w-3 h-3" />
+            {phaseLabels[conv.phase] || conv.phase}
+          </div>
+        )}
+        {conv.spontaneousSubstitution !== null && (
+          <div className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded-full",
+            conv.spontaneousSubstitution ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600",
+          )}>
+            <ArrowRightLeft className="w-3 h-3" />
+            {conv.spontaneousSubstitution
+              ? "Substituição espontânea detectada"
+              : "Sem substituição espontânea"}
+          </div>
+        )}
       </div>
 
       {/* Messages */}
@@ -176,20 +221,40 @@ export function ConversationThreadPage() {
               <div key={pr.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                 <Package className="w-4 h-4 text-gray-400" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900">{pr.product.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-gray-900">{pr.product.name}</p>
+                    {pr.substitutionType && (
+                      <span className={cn("px-1.5 py-0.5 rounded text-xs font-medium", substitutionColors[pr.substitutionType] || "bg-gray-100 text-gray-600")}>
+                        {substitutionLabels[pr.substitutionType] || pr.substitutionType}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-gray-500">
                     {pr.product.activeIngredient}
                     {pr.brand && ` - ${pr.brand}`}
-                    {pr.isGeneric && " (Generico)"}
+                    {pr.isGeneric && " (Genérico)"}
                   </p>
+                  {(pr.dosage || pr.quantity || pr.presentation) && (
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {[pr.dosage, pr.presentation, pr.quantity].filter(Boolean).join(" · ")}
+                    </p>
+                  )}
+                  {pr.notes && (
+                    <p className="text-xs text-gray-400 mt-0.5 italic">{pr.notes}</p>
+                  )}
                 </div>
                 <div className="text-right">
                   {pr.price ? (
                     <p className="text-sm font-bold text-green-700">R$ {Number(pr.price).toFixed(2).replace(".", ",")}</p>
                   ) : (
-                    <p className="text-xs text-gray-400">Sem preco</p>
+                    <p className="text-xs text-gray-400">Sem preço</p>
                   )}
                   <p className="text-xs text-gray-500">{availLabels[pr.availability] || pr.availability}</p>
+                  {pr.conversationPhase && (
+                    <p className="text-xs text-gray-400">
+                      {pr.conversationPhase === "phase1_branded" ? "Fase 1" : "Fase 2"}
+                    </p>
+                  )}
                 </div>
               </div>
             ))}

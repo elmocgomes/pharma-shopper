@@ -69,7 +69,7 @@ async function checkTimeouts(db: Db): Promise<{ timedOut: number }> {
   const cutoff = new Date(Date.now() - RESPONSE_TIMEOUT_MS);
 
   const staleConversations = await db
-    .select({ id: conversations.id })
+    .select({ id: conversations.id, phase: conversations.phase })
     .from(conversations)
     .where(
       and(
@@ -84,18 +84,39 @@ async function checkTimeouts(db: Db): Promise<{ timedOut: number }> {
     return { timedOut: 0 };
   }
 
-  const ids = staleConversations.map((c) => c.id);
+  // Phase 1 timeouts → transition to phase 2 instead of marking as timed out
+  const phase1Timeouts = staleConversations.filter((c) => c.phase === "phase1_branded");
+  const phase2Timeouts = staleConversations.filter((c) => c.phase !== "phase1_branded");
 
-  await db
-    .update(conversations)
-    .set({
-      status: "timeout",
-      completedAt: new Date(),
-    })
-    .where(inArray(conversations.id, ids));
+  if (phase1Timeouts.length > 0) {
+    const phase1Ids = phase1Timeouts.map((c) => c.id);
+    await db
+      .update(conversations)
+      .set({
+        phase: "phase2_alternatives",
+        status: "initial",
+        spontaneousSubstitution: false,
+      })
+      .where(inArray(conversations.id, phase1Ids));
+    console.log(
+      `[maintenance] ${phase1Ids.length} phase-1 timeouts → transitioned to phase 2`,
+    );
+  }
+
+  const ids = phase2Timeouts.map((c) => c.id);
+
+  if (ids.length > 0) {
+    await db
+      .update(conversations)
+      .set({
+        status: "timeout",
+        completedAt: new Date(),
+      })
+      .where(inArray(conversations.id, ids));
+  }
 
   console.log(
-    `[maintenance] Marked ${ids.length} conversations as timed out`,
+    `[maintenance] Marked ${ids.length} conversations as timed out (${phase1Timeouts.length} transitioned to phase 2)`,
   );
 
   // Check if any campaigns are now fully complete

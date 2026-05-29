@@ -19,6 +19,13 @@ export const availabilityEnum = pgEnum("availability", [
   "unknown",
 ]);
 
+export const substitutionTypeEnum = pgEnum("substitution_type", [
+  "requested",
+  "spontaneous",
+  "prompted",
+  "not_offered",
+]);
+
 export const priceRecords = pgTable(
   "price_records",
   {
@@ -37,6 +44,11 @@ export const priceRecords = pgTable(
       .default("unknown"),
     brand: text("brand"),
     isGeneric: boolean("is_generic").notNull().default(false),
+    substitutionType: substitutionTypeEnum("substitution_type"),
+    dosage: text("dosage"),
+    quantity: text("quantity"),
+    presentation: text("presentation"),
+    conversationPhase: text("conversation_phase"),
     notes: text("notes"),
     collectedAt: timestamp("collected_at", { withTimezone: true })
       .notNull()

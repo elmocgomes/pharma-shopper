@@ -5,7 +5,8 @@ import type {
   MessageType,
   GeneratedMessage,
   ParseResult,
-  ParsedPrice,
+  ParsedProduct,
+  ConversationPhase,
 } from "./types.js";
 import {
   buildPersonaSystemPrompt,
@@ -21,33 +22,90 @@ export interface AiClientConfig {
   maxTokens?: number;
 }
 
-const PRICE_TOOL: Anthropic.Tool = {
-  name: "extract_prices",
-  description: "Extract structured price and availability data from a pharmacy response",
+const PHARMACY_DATA_TOOL: Anthropic.Tool = {
+  name: "extract_pharmacy_data",
+  description:
+    "Extract structured product, pricing, and substitution behavior data from a pharmacy response",
   input_schema: {
     type: "object" as const,
     properties: {
-      prices: {
+      products: {
         type: "array",
+        description: "All products mentioned in the pharmacy response",
         items: {
           type: "object",
           properties: {
-            productName: { type: "string", description: "Product name as mentioned" },
-            brand: { type: ["string", "null"], description: "Brand name if mentioned" },
-            price: { type: ["number", "null"], description: "Price in BRL (e.g. 25.90), null if not mentioned" },
+            productName: {
+              type: "string",
+              description: "Product name as mentioned by the pharmacy",
+            },
+            brand: {
+              type: ["string", "null"],
+              description: "Brand name if mentioned (e.g. Merck, EMS, Medley)",
+            },
+            price: {
+              type: ["number", "null"],
+              description: "Price in BRL (e.g. 25.90), null if not mentioned",
+            },
             availability: {
               type: "string",
               enum: ["in_stock", "out_of_stock", "on_order", "unknown"],
             },
-            isGeneric: { type: ["boolean", "null"], description: "Whether it's a generic version" },
-            notes: { type: ["string", "null"], description: "Any additional notes" },
+            isGeneric: {
+              type: ["boolean", "null"],
+              description: "Whether it's a generic version",
+            },
+            substitutionType: {
+              type: "string",
+              enum: ["requested", "spontaneous", "prompted", "not_offered"],
+              description:
+                "How this product appeared: 'requested' = the product we asked about, " +
+                "'spontaneous' = pharmacy offered it without being asked, " +
+                "'prompted' = pharmacy offered it after we asked for alternatives, " +
+                "'not_offered' = we asked for alternatives but none were offered",
+            },
+            dosage: {
+              type: ["string", "null"],
+              description: "Dosage (e.g. '50mg', '500mg/5ml', '25mg')",
+            },
+            quantity: {
+              type: ["string", "null"],
+              description:
+                "Quantity/packaging (e.g. '30 comprimidos', '60cp', '1 frasco 120ml')",
+            },
+            presentation: {
+              type: ["string", "null"],
+              description:
+                "Pharmaceutical form (e.g. 'comprimido', 'cápsula', 'suspensão', 'pomada', 'creme', 'solução', 'gotas')",
+            },
+            activeIngredient: {
+              type: ["string", "null"],
+              description:
+                "Active ingredient if mentioned (e.g. 'losartana potássica', 'atenolol')",
+            },
+            notes: {
+              type: ["string", "null"],
+              description: "Any additional observations",
+            },
           },
-          required: ["productName", "availability"],
+          required: ["productName", "availability", "substitutionType"],
         },
+      },
+      spontaneousSubstitution: {
+        type: "boolean",
+        description:
+          "Whether the pharmacy spontaneously offered generic/similar/alternative products WITHOUT being asked. " +
+          "true only if the pharmacy volunteered alternatives on their own initiative.",
+      },
+      spontaneousDetails: {
+        type: ["string", "null"],
+        description:
+          "If spontaneousSubstitution is true, describe what was offered and how",
       },
       needsFollowUp: {
         type: "boolean",
-        description: "Whether the response is incomplete and needs follow-up",
+        description:
+          "Whether the response is incomplete and needs a follow-up question (missing price or availability)",
       },
       followUpReason: {
         type: ["string", "null"],
@@ -58,7 +116,12 @@ const PRICE_TOOL: Anthropic.Tool = {
         description: "Brief analysis of what was understood from the response",
       },
     },
-    required: ["prices", "needsFollowUp", "rawAnalysis"],
+    required: [
+      "products",
+      "spontaneousSubstitution",
+      "needsFollowUp",
+      "rawAnalysis",
+    ],
   },
 };
 
@@ -111,19 +174,26 @@ export class AiClient {
   async parseResponse(
     pharmacyResponse: string,
     requestedProducts: string[],
+    phase: ConversationPhase = "phase1_branded",
+    conversationHistory?: { role: "user" | "assistant"; content: string }[],
   ): Promise<ParseResult> {
     const response = await this.client.messages.create({
       model: this.model,
       max_tokens: 1024,
-      system: buildParseSystemPrompt(),
+      system: buildParseSystemPrompt(phase),
       messages: [
         {
           role: "user",
-          content: buildParseUserPrompt(pharmacyResponse, requestedProducts),
+          content: buildParseUserPrompt(
+            pharmacyResponse,
+            requestedProducts,
+            phase,
+            conversationHistory,
+          ),
         },
       ],
-      tools: [PRICE_TOOL],
-      tool_choice: { type: "tool", name: "extract_prices" },
+      tools: [PHARMACY_DATA_TOOL],
+      tool_choice: { type: "tool", name: "extract_pharmacy_data" },
     });
 
     const toolBlock = response.content.find(
@@ -132,7 +202,9 @@ export class AiClient {
 
     if (!toolBlock) {
       return {
-        prices: [],
+        products: [],
+        spontaneousSubstitution: false,
+        spontaneousDetails: null,
         needsFollowUp: true,
         followUpReason: "Could not parse response",
         rawAnalysis: "No tool output returned",
@@ -140,14 +212,18 @@ export class AiClient {
     }
 
     const input = toolBlock.input as {
-      prices: ParsedPrice[];
+      products: ParsedProduct[];
+      spontaneousSubstitution: boolean;
+      spontaneousDetails?: string | null;
       needsFollowUp: boolean;
       followUpReason?: string | null;
       rawAnalysis: string;
     };
 
     return {
-      prices: input.prices || [],
+      products: input.products || [],
+      spontaneousSubstitution: input.spontaneousSubstitution ?? false,
+      spontaneousDetails: input.spontaneousDetails ?? null,
       needsFollowUp: input.needsFollowUp ?? false,
       followUpReason: input.followUpReason ?? null,
       rawAnalysis: input.rawAnalysis || "",

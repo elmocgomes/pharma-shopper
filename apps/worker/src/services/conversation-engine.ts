@@ -1,4 +1,4 @@
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import type { Db } from "@pharma-shopper/db";
 import {
   conversations,
@@ -10,10 +10,17 @@ import {
   priceRecords,
   waSessions,
 } from "@pharma-shopper/db";
-import { AiClient, type PersonaProfile, type ConversationContext } from "@pharma-shopper/ai";
+import {
+  AiClient,
+  type PersonaProfile,
+  type ConversationContext,
+  type ConversationPhase,
+  type MessageType,
+  type ProductInfo,
+} from "@pharma-shopper/ai";
 import { WaClient } from "@pharma-shopper/wa-client";
 
-const MAX_FOLLOW_UPS = 2;
+const MAX_FOLLOW_UPS_PER_PHASE = 2;
 const RESPONSE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 export interface EngineConfig {
@@ -22,6 +29,20 @@ export interface EngineConfig {
   wa: WaClient;
 }
 
+/**
+ * Two-phase mystery shopping conversation engine.
+ *
+ * Phase 1 (phase1_branded):
+ *   Ask about the specific branded product. Observe whether the pharmacy
+ *   spontaneously offers generic/alternative products.
+ *
+ * Phase 2 (phase2_alternatives):
+ *   If the pharmacy did NOT spontaneously offer alternatives, probe by asking
+ *   "tem genérico?" or "tem opção mais em conta?". Capture prompted substitution.
+ *
+ * If the pharmacy spontaneously offered alternatives in phase 1, skip phase 2
+ * and mark the conversation as completed.
+ */
 export async function runConversationStep(
   config: EngineConfig,
   conversationId: string,
@@ -50,18 +71,30 @@ export async function runConversationStep(
     ? await db.select().from(personas).where(eq(personas.id, conv.personaId)).limit(1)
     : [null];
 
+  // Get campaign products with pharmaceutical details
   const campaignProds = await db
-    .select({ name: products.name })
+    .select({
+      name: products.name,
+      activeIngredient: products.activeIngredient,
+      presentation: products.presentation,
+    })
     .from(campaignProducts)
     .innerJoin(products, eq(campaignProducts.productId, products.id))
     .where(eq(campaignProducts.campaignId, conv.campaignId));
-  const productNames = campaignProds.map((p) => p.name);
+
+  const productInfos: ProductInfo[] = campaignProds.map((p) => ({
+    name: p.name,
+    activeIngredient: p.activeIngredient,
+    presentation: p.presentation,
+  }));
 
   const prevMsgs = await db
     .select()
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
     .orderBy(messages.sentAt);
+
+  const phase = (conv.phase as ConversationPhase) || "phase1_branded";
 
   switch (conv.status) {
     case "pending":
@@ -71,57 +104,24 @@ export async function runConversationStep(
         return;
       }
 
-      // Pre-flight: verify session is connected before sending
       if (session.status !== "connected") {
         console.warn(
           `[conversation] Session ${session.phoneNumber} is ${session.status}, skipping send for ${conversationId}`,
         );
-        return; // Leave as pending, will retry when session reconnects
+        return;
       }
 
-      const personaProfile: PersonaProfile = {
-        name: persona.name,
-        ageRange: persona.ageRange,
-        gender: persona.gender,
-        occupation: persona.occupation,
-        communicationStyle: persona.communicationStyle,
-        scenarioTemplates: persona.scenarioTemplates as string[],
-      };
+      const personaProfile = buildPersonaProfile(persona);
+      const ctx = buildContext(pharmacy, productInfos, phase, prevMsgs.length > 0 ? prevMsgs : undefined);
 
-      const ctx: ConversationContext = {
-        pharmacyName: pharmacy.name,
-        pharmacyCity: pharmacy.city,
-        pharmacyState: pharmacy.state,
-        productNames,
-      };
+      // Phase 1 starts with a greeting; Phase 2 starts with a probe about alternatives
+      const messageType: MessageType =
+        phase === "phase2_alternatives" ? "phase2_probe" : "greeting";
+      const generated = await ai.generateMessage(personaProfile, ctx, messageType);
 
-      const generated = await ai.generateMessage(personaProfile, ctx, "greeting");
-
-      try {
-        await wa.sendText(
-          session.waGatewaySessionId,
-          pharmacy.whatsappNumber,
-          generated.text,
-        );
-      } catch (sendErr: any) {
-        console.error(
-          `[conversation] Send failed for ${conversationId}: ${sendErr.message}`,
-        );
-        // Mark session as disconnected so health check can reconnect
-        await db
-          .update(waSessions)
-          .set({ status: "disconnected", updatedAt: new Date() })
-          .where(eq(waSessions.id, session.id));
-        // Increment retry count; fail after 3 retries
-        const newRetry = conv.retryCount + 1;
-        if (newRetry >= 3) {
-          await updateStatus(db, conversationId, "failed");
-        } else {
-          await db
-            .update(conversations)
-            .set({ retryCount: newRetry })
-            .where(eq(conversations.id, conversationId));
-        }
+      const sendOk = await safeSend(config, session, pharmacy, generated.text, conversationId);
+      if (!sendOk) {
+        await handleSendFailure(db, conv, session.id);
         return;
       }
 
@@ -135,20 +135,13 @@ export async function runConversationStep(
         sentAt: now,
       });
 
-      // Increment daily message count
-      await db
-        .update(waSessions)
-        .set({
-          dailyMessageCount: sql`${waSessions.dailyMessageCount} + 1`,
-          lastActiveAt: now,
-          updatedAt: now,
-        })
-        .where(eq(waSessions.id, session.id));
+      await incrementDailyCount(db, session.id, now);
 
       await db
         .update(conversations)
         .set({
           status: "awaiting_response",
+          phase: "phase1_branded",
           startedAt: conv.startedAt || now,
           lastMessageAt: now,
         })
@@ -163,7 +156,6 @@ export async function runConversationStep(
         return;
       }
 
-      // Pre-flight: verify session is connected
       if (session.status !== "connected") {
         console.warn(
           `[conversation] Session ${session.phoneNumber} is ${session.status}, deferring follow-up for ${conversationId}`,
@@ -171,53 +163,33 @@ export async function runConversationStep(
         return;
       }
 
-      const followUpCount = prevMsgs.filter(
+      // Count follow-ups in current phase
+      const outboundCount = prevMsgs.filter(
         (m) => m.direction === "outbound" && m.aiGenerated === "true",
-      ).length - 1; // subtract greeting
+      ).length;
 
-      if (followUpCount >= MAX_FOLLOW_UPS) {
-        await updateStatus(db, conversationId, "completed");
+      // In phase1: greeting + up to 2 follow-ups. In phase2: probe + up to 2 follow-ups.
+      const phaseStartCount = phase === "phase1_branded" ? 1 : outboundCount - MAX_FOLLOW_UPS_PER_PHASE - 1;
+      const followUpsInPhase = outboundCount - phaseStartCount;
+
+      if (followUpsInPhase >= MAX_FOLLOW_UPS_PER_PHASE) {
+        // Exceeded follow-ups for this phase
+        if (phase === "phase1_branded") {
+          // Move to phase 2 even without complete data
+          await transitionToPhase2(db, conversationId, false);
+        } else {
+          await updateStatus(db, conversationId, "completed");
+        }
         return;
       }
 
-      const personaProfile: PersonaProfile = {
-        name: persona.name,
-        ageRange: persona.ageRange,
-        gender: persona.gender,
-        occupation: persona.occupation,
-        communicationStyle: persona.communicationStyle,
-        scenarioTemplates: persona.scenarioTemplates as string[],
-      };
-
-      const ctx: ConversationContext = {
-        pharmacyName: pharmacy.name,
-        pharmacyCity: pharmacy.city,
-        pharmacyState: pharmacy.state,
-        productNames,
-        previousMessages: prevMsgs.map((m) => ({
-          role: m.direction === "outbound" ? "assistant" as const : "user" as const,
-          content: m.content || "",
-        })),
-      };
+      const personaProfile = buildPersonaProfile(persona);
+      const ctx = buildContext(pharmacy, productInfos, phase, prevMsgs);
 
       const generated = await ai.generateMessage(personaProfile, ctx, "follow_up");
 
-      try {
-        await wa.sendText(
-          session.waGatewaySessionId,
-          pharmacy.whatsappNumber,
-          generated.text,
-        );
-      } catch (sendErr: any) {
-        console.error(
-          `[conversation] Follow-up send failed for ${conversationId}: ${sendErr.message}`,
-        );
-        await db
-          .update(waSessions)
-          .set({ status: "disconnected", updatedAt: new Date() })
-          .where(eq(waSessions.id, session.id));
-        return; // Stay in follow_up, will retry
-      }
+      const sendOk = await safeSend(config, session, pharmacy, generated.text, conversationId);
+      if (!sendOk) return; // Stay in follow_up, will retry
 
       const now = new Date();
       await db.insert(messages).values({
@@ -229,15 +201,7 @@ export async function runConversationStep(
         sentAt: now,
       });
 
-      // Increment daily message count
-      await db
-        .update(waSessions)
-        .set({
-          dailyMessageCount: sql`${waSessions.dailyMessageCount} + 1`,
-          lastActiveAt: now,
-          updatedAt: now,
-        })
-        .where(eq(waSessions.id, session.id));
+      await incrementDailyCount(db, session.id, now);
 
       await db
         .update(conversations)
@@ -252,7 +216,12 @@ export async function runConversationStep(
         conv.lastMessageAt &&
         Date.now() - conv.lastMessageAt.getTime() > RESPONSE_TIMEOUT_MS
       ) {
-        await updateStatus(db, conversationId, "timeout");
+        if (phase === "phase1_branded") {
+          // Timeout in phase 1 — try phase 2 anyway
+          await transitionToPhase2(db, conversationId, false);
+        } else {
+          await updateStatus(db, conversationId, "timeout");
+        }
       }
       break;
     }
@@ -262,6 +231,9 @@ export async function runConversationStep(
   }
 }
 
+/**
+ * Handle incoming pharmacy response — parse and decide next phase.
+ */
 export async function handleIncomingMessage(
   config: EngineConfig,
   conversationId: string,
@@ -281,17 +253,34 @@ export async function handleIncomingMessage(
     .set({ status: "parsing" })
     .where(eq(conversations.id, conversationId));
 
+  const phase = (conv.phase as ConversationPhase) || "phase1_branded";
+
   const campaignProds = await db
     .select({ id: products.id, name: products.name })
     .from(campaignProducts)
     .innerJoin(products, eq(campaignProducts.productId, products.id))
     .where(eq(campaignProducts.campaignId, conv.campaignId));
 
+  // Get conversation history for context-aware parsing
+  const prevMsgs = await db
+    .select()
+    .from(messages)
+    .where(eq(messages.conversationId, conversationId))
+    .orderBy(messages.sentAt);
+
+  const conversationHistory = prevMsgs.map((m) => ({
+    role: (m.direction === "outbound" ? "assistant" : "user") as "user" | "assistant",
+    content: m.content || "",
+  }));
+
   const result = await ai.parseResponse(
     incomingText,
     campaignProds.map((p) => p.name),
+    phase,
+    conversationHistory,
   );
 
+  // Store parsed data on the incoming message
   await db
     .update(messages)
     .set({ parsedData: result })
@@ -302,10 +291,12 @@ export async function handleIncomingMessage(
       ),
     );
 
-  for (const price of result.prices) {
+  // Record price data with substitution behavior
+  for (const product of result.products) {
     const matchedProduct = campaignProds.find(
-      (p) => p.name.toLowerCase().includes(price.productName.toLowerCase()) ||
-             price.productName.toLowerCase().includes(p.name.toLowerCase()),
+      (p) =>
+        p.name.toLowerCase().includes(product.productName.toLowerCase()) ||
+        product.productName.toLowerCase().includes(p.name.toLowerCase()),
     );
 
     if (matchedProduct) {
@@ -313,20 +304,183 @@ export async function handleIncomingMessage(
         conversationId,
         productId: matchedProduct.id,
         pharmacyId: conv.pharmacyId,
-        price: price.price != null ? String(price.price) : null,
-        availability: price.availability,
-        brand: price.brand,
-        isGeneric: price.isGeneric ?? false,
-        notes: price.notes,
+        price: product.price != null ? String(product.price) : null,
+        availability: product.availability,
+        brand: product.brand,
+        isGeneric: product.isGeneric ?? false,
+        substitutionType: product.substitutionType || null,
+        dosage: product.dosage,
+        quantity: product.quantity,
+        presentation: product.presentation,
+        conversationPhase: phase,
+        notes: product.notes,
       });
+    } else if (
+      product.substitutionType === "spontaneous" ||
+      product.substitutionType === "prompted"
+    ) {
+      // Alternative product that doesn't match a campaign product — still record it
+      // Use the first campaign product as reference
+      const refProduct = campaignProds[0];
+      if (refProduct) {
+        await db.insert(priceRecords).values({
+          conversationId,
+          productId: refProduct.id,
+          pharmacyId: conv.pharmacyId,
+          price: product.price != null ? String(product.price) : null,
+          availability: product.availability,
+          brand: product.brand,
+          isGeneric: product.isGeneric ?? true,
+          substitutionType: product.substitutionType,
+          dosage: product.dosage,
+          quantity: product.quantity,
+          presentation: product.presentation,
+          conversationPhase: phase,
+          notes: `[Alt: ${product.productName}] ${product.notes || ""}`.trim(),
+        });
+      }
     }
   }
 
-  if (result.needsFollowUp) {
-    await updateStatus(db, conversationId, "follow_up");
+  // Decide next step based on phase and results
+  if (phase === "phase1_branded") {
+    // Record whether spontaneous substitution occurred
+    await db
+      .update(conversations)
+      .set({ spontaneousSubstitution: result.spontaneousSubstitution })
+      .where(eq(conversations.id, conversationId));
+
+    if (result.needsFollowUp) {
+      // Pharmacy response was incomplete — follow up in same phase
+      await updateStatus(db, conversationId, "follow_up");
+    } else if (result.spontaneousSubstitution) {
+      // Pharmacy already offered alternatives — we have the data, done!
+      console.log(
+        `[conversation] ${conversationId}: Spontaneous substitution detected, completing`,
+      );
+      await updateStatus(db, conversationId, "completed");
+    } else {
+      // Phase 1 complete, pharmacy didn't offer alternatives → move to phase 2
+      await transitionToPhase2(db, conversationId, false);
+    }
   } else {
-    await updateStatus(db, conversationId, "completed");
+    // Phase 2 — alternatives
+    if (result.needsFollowUp) {
+      await updateStatus(db, conversationId, "follow_up");
+    } else {
+      await updateStatus(db, conversationId, "completed");
+    }
   }
+}
+
+// --- Helpers ---
+
+function buildPersonaProfile(persona: any): PersonaProfile {
+  return {
+    name: persona.name,
+    ageRange: persona.ageRange,
+    gender: persona.gender,
+    occupation: persona.occupation,
+    communicationStyle: persona.communicationStyle,
+    scenarioTemplates: persona.scenarioTemplates as string[],
+  };
+}
+
+function buildContext(
+  pharmacy: any,
+  productInfos: ProductInfo[],
+  phase: ConversationPhase,
+  prevMsgs?: any[],
+): ConversationContext {
+  return {
+    pharmacyName: pharmacy.name,
+    pharmacyCity: pharmacy.city,
+    pharmacyState: pharmacy.state,
+    products: productInfos,
+    productNames: productInfos.map((p) => p.name),
+    phase,
+    previousMessages: prevMsgs?.map((m) => ({
+      role: (m.direction === "outbound" ? "assistant" : "user") as "user" | "assistant",
+      content: m.content || "",
+    })),
+  };
+}
+
+async function transitionToPhase2(
+  db: Db,
+  conversationId: string,
+  spontaneous: boolean,
+): Promise<void> {
+  console.log(
+    `[conversation] ${conversationId}: Transitioning to phase 2 (alternatives probe)`,
+  );
+  // Set phase to phase2 and status to follow_up so the engine sends the probe message
+  // We use "follow_up" status but the message type will be "phase2_probe"
+  await db
+    .update(conversations)
+    .set({
+      phase: "phase2_alternatives",
+      status: "initial", // Will trigger a new outbound message
+      spontaneousSubstitution: spontaneous,
+    })
+    .where(eq(conversations.id, conversationId));
+}
+
+async function safeSend(
+  config: EngineConfig,
+  session: any,
+  pharmacy: any,
+  text: string,
+  conversationId: string,
+): Promise<boolean> {
+  try {
+    await config.wa.sendText(
+      session.waGatewaySessionId,
+      pharmacy.whatsappNumber,
+      text,
+    );
+    return true;
+  } catch (sendErr: any) {
+    console.error(
+      `[conversation] Send failed for ${conversationId}: ${sendErr.message}`,
+    );
+    await config.db
+      .update(waSessions)
+      .set({ status: "disconnected", updatedAt: new Date() })
+      .where(eq(waSessions.id, session.id));
+    return false;
+  }
+}
+
+async function handleSendFailure(
+  db: Db,
+  conv: any,
+  sessionId: string,
+): Promise<void> {
+  const newRetry = conv.retryCount + 1;
+  if (newRetry >= 3) {
+    await updateStatus(db, conv.id, "failed");
+  } else {
+    await db
+      .update(conversations)
+      .set({ retryCount: newRetry })
+      .where(eq(conversations.id, conv.id));
+  }
+}
+
+async function incrementDailyCount(
+  db: Db,
+  sessionId: string,
+  now: Date,
+): Promise<void> {
+  await db
+    .update(waSessions)
+    .set({
+      dailyMessageCount: sql`${waSessions.dailyMessageCount} + 1`,
+      lastActiveAt: now,
+      updatedAt: now,
+    })
+    .where(eq(waSessions.id, sessionId));
 }
 
 async function updateStatus(
