@@ -13,6 +13,7 @@
     "db:seed": "turbo run db:seed --filter=@pharma-shopper/db"
   },
   "devDependencies": {
+    "@types/node": "^20.17.0",
     "turbo": "^2.4.0",
     "typescript": "^5.8.0"
   }
