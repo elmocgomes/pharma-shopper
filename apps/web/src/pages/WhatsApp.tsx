@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import QRCode from "qrcode";
 import {
   Plus,
   RefreshCw,
@@ -57,7 +58,25 @@ export function WhatsAppPage() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [qrData, setQrData] = useState<{ sessionId: string; qr: string } | null>(null);
+  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
   const [stateFilter, setStateFilter] = useState("");
+
+  // Convert raw QR string to renderable image
+  useEffect(() => {
+    if (!qrData?.qr) {
+      setQrImageUrl(null);
+      return;
+    }
+    // If it's already a data URL or http URL, use directly
+    if (qrData.qr.startsWith("data:") || qrData.qr.startsWith("http")) {
+      setQrImageUrl(qrData.qr);
+      return;
+    }
+    // Otherwise, it's a raw QR string — render it as a QR code image
+    QRCode.toDataURL(qrData.qr, { width: 256, margin: 2 })
+      .then((url) => setQrImageUrl(url))
+      .catch((err) => console.error("QR render error:", err));
+  }, [qrData]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["wa-sessions", stateFilter],
@@ -262,7 +281,13 @@ export function WhatsAppPage() {
           <div className="bg-white rounded-xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-semibold mb-4">Escanear QR Code</h2>
             <div className="flex justify-center">
-              <img src={qrData.qr} alt="QR Code" className="w-64 h-64" />
+              {qrImageUrl ? (
+                <img src={qrImageUrl} alt="QR Code" className="w-64 h-64" />
+              ) : (
+                <div className="w-64 h-64 flex items-center justify-center text-gray-400">
+                  <RefreshCw className="w-8 h-8 animate-spin" />
+                </div>
+              )}
             </div>
             <p className="text-xs text-gray-500 text-center mt-3">
               Abra o WhatsApp no celular e escaneie o código
