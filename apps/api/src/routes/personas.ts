@@ -7,13 +7,13 @@ import type { AppEnv } from "../server.js";
 
 const createSchema = z.object({
   name: z.string().min(1),
-  ageRange: z.string().optional(),
-  gender: z.string().optional(),
-  occupation: z.string().optional(),
-  communicationStyle: z.enum(personaStyleEnum.enumValues).optional(),
-  scenarioTemplates: z.array(z.string()).optional(),
-  avatarUrl: z.string().url().optional().or(z.literal("")),
-  isActive: z.boolean().optional(),
+  ageRange: z.string().optional().nullable().transform((v) => v ?? undefined),
+  gender: z.string().optional().nullable().transform((v) => v ?? undefined),
+  occupation: z.string().optional().nullable().transform((v) => v ?? undefined),
+  communicationStyle: z.enum(personaStyleEnum.enumValues).optional().nullable().transform((v) => v ?? undefined),
+  scenarioTemplates: z.array(z.string()).optional().nullable().transform((v) => v ?? undefined),
+  avatarUrl: z.string().url().optional().nullable().transform((v) => v ?? undefined).or(z.literal("")),
+  isActive: z.boolean().optional().nullable().transform((v) => v ?? undefined),
 });
 
 const updateSchema = createSchema.partial();

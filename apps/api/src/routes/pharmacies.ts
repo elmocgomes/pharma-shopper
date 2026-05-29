@@ -8,17 +8,17 @@ import type { AppEnv } from "../server.js";
 
 const createSchema = z.object({
   name: z.string().min(1),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  state: z.enum(BR_STATES).optional(),
-  zipCode: z.string().optional(),
-  phone: z.string().optional(),
+  address: z.string().nullish(),
+  city: z.string().nullish(),
+  state: z.enum(BR_STATES).nullish(),
+  zipCode: z.string().nullish(),
+  phone: z.string().nullish(),
   whatsappNumber: z.string().min(1),
-  chain: z.string().optional(),
-  lat: z.string().optional(),
-  lng: z.string().optional(),
-  source: z.string().optional(),
-  notes: z.string().optional(),
+  chain: z.string().nullish(),
+  lat: z.string().nullish(),
+  lng: z.string().nullish(),
+  source: z.string().nullish(),
+  notes: z.string().nullish(),
 });
 
 const updateSchema = createSchema.partial();

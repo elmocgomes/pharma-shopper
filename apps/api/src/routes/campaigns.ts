@@ -23,9 +23,9 @@ const campaignQueue = new Queue("campaign", {
 const createSchema = z.object({
   name: z.string().min(1),
   targetStates: z.array(z.enum(BR_STATES)).default([]),
-  businessHoursStart: z.string().optional(),
-  businessHoursEnd: z.string().optional(),
-  rateLimitPerHour: z.number().int().positive().optional(),
+  businessHoursStart: z.string().optional().nullable().transform((v) => v ?? undefined),
+  businessHoursEnd: z.string().optional().nullable().transform((v) => v ?? undefined),
+  rateLimitPerHour: z.number().int().positive().optional().nullable().transform((v) => v ?? undefined),
   productIds: z.array(z.string().uuid()).min(1),
   pharmacyIds: z.array(z.string().uuid()).min(1),
 });
@@ -33,9 +33,9 @@ const createSchema = z.object({
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
   targetStates: z.array(z.enum(BR_STATES)).optional(),
-  businessHoursStart: z.string().optional(),
-  businessHoursEnd: z.string().optional(),
-  rateLimitPerHour: z.number().int().positive().optional(),
+  businessHoursStart: z.string().optional().nullable().transform((v) => v ?? undefined),
+  businessHoursEnd: z.string().optional().nullable().transform((v) => v ?? undefined),
+  rateLimitPerHour: z.number().int().positive().optional().nullable().transform((v) => v ?? undefined),
 });
 
 export const campaignRoutes = new Hono<AppEnv>()

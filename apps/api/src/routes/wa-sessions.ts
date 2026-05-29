@@ -16,9 +16,9 @@ const waClient = new WaClient({
 const createSchema = z.object({
   phoneNumber: z.string().min(1),
   waGatewaySessionId: z.string().min(1),
-  displayName: z.string().optional(),
-  stateCode: z.enum(BR_STATES).optional(),
-  maxDailyMessages: z.number().int().positive().optional(),
+  displayName: z.string().optional().nullable().transform((v) => v ?? undefined),
+  stateCode: z.enum(BR_STATES).optional().nullable().transform((v) => v ?? undefined),
+  maxDailyMessages: z.number().int().positive().optional().nullable().transform((v) => v ?? undefined),
 });
 
 const updateSchema = z.object({

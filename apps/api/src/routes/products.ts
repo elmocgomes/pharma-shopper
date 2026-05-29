@@ -7,11 +7,11 @@ import type { AppEnv } from "../server.js";
 
 const createSchema = z.object({
   name: z.string().min(1),
-  activeIngredient: z.string().optional(),
-  presentation: z.string().optional(),
-  anvisaCode: z.string().optional(),
-  category: z.string().optional(),
-  isGeneric: z.boolean().optional(),
+  activeIngredient: z.string().optional().nullable().transform((v) => v ?? undefined),
+  presentation: z.string().optional().nullable().transform((v) => v ?? undefined),
+  anvisaCode: z.string().optional().nullable().transform((v) => v ?? undefined),
+  category: z.string().optional().nullable().transform((v) => v ?? undefined),
+  isGeneric: z.boolean().optional().nullable().transform((v) => v ?? undefined),
 });
 
 const updateSchema = createSchema.partial();
