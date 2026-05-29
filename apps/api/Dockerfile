@@ -3,20 +3,8 @@ RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 
 FROM base AS build
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.base.json ./
-COPY apps/api/package.json ./apps/api/
-COPY apps/api/tsconfig.json ./apps/api/
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/shared/tsconfig.json ./packages/shared/
-COPY packages/db/package.json ./packages/db/
-COPY packages/db/tsconfig.json ./packages/db/
-COPY packages/wa-client/package.json ./packages/wa-client/
-COPY packages/wa-client/tsconfig.json ./packages/wa-client/
+COPY . .
 RUN pnpm install --frozen-lockfile
-COPY packages/shared/src ./packages/shared/src
-COPY packages/db/src ./packages/db/src
-COPY packages/wa-client/src ./packages/wa-client/src
-COPY apps/api/src ./apps/api/src
 RUN pnpm --filter @pharma-shopper/shared build && \
     pnpm --filter @pharma-shopper/db build && \
     pnpm --filter @pharma-shopper/wa-client build && \
