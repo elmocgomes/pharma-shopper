@@ -2,23 +2,24 @@ FROM node:20-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 
-FROM base AS deps
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY apps/worker/package.json ./apps/worker/
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/db/package.json ./packages/db/
-COPY packages/wa-client/package.json ./packages/wa-client/
-COPY packages/ai/package.json ./packages/ai/
-RUN pnpm install --frozen-lockfile
-
 FROM base AS build
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
-COPY --from=deps /app/packages/db/node_modules ./packages/db/node_modules
-COPY --from=deps /app/packages/wa-client/node_modules ./packages/wa-client/node_modules
-COPY --from=deps /app/packages/ai/node_modules ./packages/ai/node_modules
-COPY --from=deps /app/apps/worker/node_modules ./apps/worker/node_modules
-COPY . .
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.base.json ./
+COPY apps/worker/package.json ./apps/worker/
+COPY apps/worker/tsconfig.json ./apps/worker/
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/shared/tsconfig.json ./packages/shared/
+COPY packages/db/package.json ./packages/db/
+COPY packages/db/tsconfig.json ./packages/db/
+COPY packages/wa-client/package.json ./packages/wa-client/
+COPY packages/wa-client/tsconfig.json ./packages/wa-client/
+COPY packages/ai/package.json ./packages/ai/
+COPY packages/ai/tsconfig.json ./packages/ai/
+RUN pnpm install --frozen-lockfile
+COPY packages/shared/src ./packages/shared/src
+COPY packages/db/src ./packages/db/src
+COPY packages/wa-client/src ./packages/wa-client/src
+COPY packages/ai/src ./packages/ai/src
+COPY apps/worker/src ./apps/worker/src
 RUN pnpm --filter @pharma-shopper/shared build && \
     pnpm --filter @pharma-shopper/db build && \
     pnpm --filter @pharma-shopper/wa-client build && \
@@ -38,5 +39,6 @@ COPY --from=build /app/packages/ai/dist ./packages/ai/dist
 COPY --from=build /app/packages/ai/package.json ./packages/ai/
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
+COPY --from=build /app/pnpm-workspace.yaml ./
 WORKDIR /app/apps/worker
 CMD ["node", "dist/main.js"]

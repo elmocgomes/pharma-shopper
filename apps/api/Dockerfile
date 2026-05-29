@@ -2,21 +2,21 @@ FROM node:20-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 WORKDIR /app
 
-FROM base AS deps
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY apps/api/package.json ./apps/api/
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/db/package.json ./packages/db/
-COPY packages/wa-client/package.json ./packages/wa-client/
-RUN pnpm install --frozen-lockfile
-
 FROM base AS build
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
-COPY --from=deps /app/packages/db/node_modules ./packages/db/node_modules
-COPY --from=deps /app/packages/wa-client/node_modules ./packages/wa-client/node_modules
-COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
-COPY . .
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.base.json ./
+COPY apps/api/package.json ./apps/api/
+COPY apps/api/tsconfig.json ./apps/api/
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/shared/tsconfig.json ./packages/shared/
+COPY packages/db/package.json ./packages/db/
+COPY packages/db/tsconfig.json ./packages/db/
+COPY packages/wa-client/package.json ./packages/wa-client/
+COPY packages/wa-client/tsconfig.json ./packages/wa-client/
+RUN pnpm install --frozen-lockfile
+COPY packages/shared/src ./packages/shared/src
+COPY packages/db/src ./packages/db/src
+COPY packages/wa-client/src ./packages/wa-client/src
+COPY apps/api/src ./apps/api/src
 RUN pnpm --filter @pharma-shopper/shared build && \
     pnpm --filter @pharma-shopper/db build && \
     pnpm --filter @pharma-shopper/wa-client build && \
@@ -33,6 +33,7 @@ COPY --from=build /app/packages/wa-client/dist ./packages/wa-client/dist
 COPY --from=build /app/packages/wa-client/package.json ./packages/wa-client/
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
+COPY --from=build /app/pnpm-workspace.yaml ./
 WORKDIR /app/apps/api
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
