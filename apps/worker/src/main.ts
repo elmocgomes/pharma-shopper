@@ -24,7 +24,7 @@ const pingWorker = createPingWorker(redisUrl);
 const campaignWorker = createCampaignWorker(redisUrl, db);
 const conversationWorker = createConversationWorker(redisUrl, db, ai, wa);
 const parseWorker = createParseWorker(redisUrl, db, ai, wa);
-const maintenanceWorker = createMaintenanceWorker(redisUrl, db);
+const maintenanceWorker = createMaintenanceWorker(redisUrl, db, wa);
 
 // Schedule repeatable maintenance jobs
 async function scheduleMaintenanceJobs() {
@@ -51,7 +51,14 @@ async function scheduleMaintenanceJobs() {
     { name: "warmup-enforce", data: { task: "warmup_enforce" } },
   );
 
-  console.log("[maintenance] Scheduled repeatable jobs: daily-reset, timeout-check (5min), warmup-enforce (hourly)");
+  // Session health check — every 2 minutes
+  await maintenanceQueue.upsertJobScheduler(
+    "session-health",
+    { every: 2 * 60 * 1000 },
+    { name: "session-health", data: { task: "session_health" } },
+  );
+
+  console.log("[maintenance] Scheduled repeatable jobs: daily-reset, timeout-check (5min), warmup-enforce (hourly), session-health (2min)");
 }
 
 scheduleMaintenanceJobs().catch((err) => {

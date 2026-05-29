@@ -1,17 +1,18 @@
 import { Worker, type Job } from "bullmq";
-import { eq, and, lt, inArray, sql, isNotNull } from "drizzle-orm";
+import { eq, and, lt, inArray, sql, isNotNull, ne } from "drizzle-orm";
 import type { Db } from "@pharma-shopper/db";
 import { conversations, waSessions, campaigns } from "@pharma-shopper/db";
+import type { WaClient } from "@pharma-shopper/wa-client";
 
 const RESPONSE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const WARMUP_DAYS = 3;
 const WARMUP_DAILY_LIMIT = 10;
 
 interface MaintenanceJobData {
-  task: "daily_reset" | "timeout_check" | "warmup_enforce";
+  task: "daily_reset" | "timeout_check" | "warmup_enforce" | "session_health";
 }
 
-export function createMaintenanceWorker(redisUrl: string, db: Db) {
+export function createMaintenanceWorker(redisUrl: string, db: Db, wa?: WaClient) {
   const worker = new Worker<MaintenanceJobData>(
     "maintenance",
     async (job: Job<MaintenanceJobData>) => {
@@ -22,6 +23,8 @@ export function createMaintenanceWorker(redisUrl: string, db: Db) {
           return await checkTimeouts(db);
         case "warmup_enforce":
           return await enforceWarmupLimits(db);
+        case "session_health":
+          return wa ? await checkSessionHealth(db, wa) : { skipped: true };
         default:
           throw new Error(`Unknown maintenance task: ${job.data.task}`);
       }
@@ -164,4 +167,94 @@ async function enforceWarmupLimits(db: Db): Promise<{ adjusted: number }> {
   const count = (result as any).rowCount ?? 0;
   console.log(`[maintenance] Enforced warmup limits on ${count} sessions`);
   return { adjusted: count };
+}
+
+/**
+ * Active health check: polls wa-gateway for real session status,
+ * reconciles with DB, and attempts auto-reconnect for disconnected sessions.
+ * Runs every 2 minutes.
+ */
+async function checkSessionHealth(
+  db: Db,
+  wa: WaClient,
+): Promise<{ checked: number; reconnected: number; stale: number }> {
+  // Get all sessions that aren't banned (banned = manual intervention needed)
+  const dbSessions = await db
+    .select()
+    .from(waSessions)
+    .where(ne(waSessions.status, "banned"));
+
+  let checked = 0;
+  let reconnected = 0;
+  let stale = 0;
+
+  for (const session of dbSessions) {
+    checked++;
+    try {
+      const detail = await wa.getSession(session.waGatewaySessionId);
+      const isConnected = detail?.connection?.isConnected === true;
+
+      if (isConnected && session.status !== "connected") {
+        // Gateway says connected but DB says otherwise — sync DB
+        await db
+          .update(waSessions)
+          .set({ status: "connected", updatedAt: new Date() })
+          .where(eq(waSessions.id, session.id));
+        console.log(`[session-health] ${session.phoneNumber} synced → connected`);
+      } else if (!isConnected && session.status === "connected") {
+        // DB says connected but gateway says not — mark stale
+        stale++;
+        console.log(
+          `[session-health] ${session.phoneNumber} detected stale (DB=connected, gateway=disconnected)`,
+        );
+        await db
+          .update(waSessions)
+          .set({ status: "disconnected", updatedAt: new Date() })
+          .where(eq(waSessions.id, session.id));
+
+        // Attempt auto-reconnect: startSession triggers re-auth with stored credentials
+        try {
+          await wa.startSession(session.waGatewaySessionId);
+          console.log(
+            `[session-health] ${session.phoneNumber} auto-reconnect triggered`,
+          );
+          reconnected++;
+        } catch (reconnectErr: any) {
+          console.warn(
+            `[session-health] ${session.phoneNumber} auto-reconnect failed: ${reconnectErr.message}`,
+          );
+        }
+      }
+    } catch (err: any) {
+      // Session doesn't exist in gateway at all — try to re-create it
+      if (session.status === "connected" || session.status === "qr_pending") {
+        stale++;
+        await db
+          .update(waSessions)
+          .set({ status: "disconnected", updatedAt: new Date() })
+          .where(eq(waSessions.id, session.id));
+        console.warn(
+          `[session-health] ${session.phoneNumber} not found in gateway, marked disconnected`,
+        );
+
+        // Try starting a new session — if credentials exist in the volume, it reconnects
+        try {
+          await wa.startSession(session.waGatewaySessionId);
+          console.log(
+            `[session-health] ${session.phoneNumber} re-created in gateway, awaiting auth`,
+          );
+          reconnected++;
+        } catch (startErr: any) {
+          console.warn(
+            `[session-health] ${session.phoneNumber} re-create failed: ${startErr.message}`,
+          );
+        }
+      }
+    }
+  }
+
+  console.log(
+    `[session-health] Checked ${checked} sessions: ${stale} stale, ${reconnected} reconnect attempts`,
+  );
+  return { checked, reconnected, stale };
 }

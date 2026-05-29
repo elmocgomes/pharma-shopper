@@ -1,4 +1,4 @@
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import type { Db } from "@pharma-shopper/db";
 import {
   conversations,
@@ -71,6 +71,14 @@ export async function runConversationStep(
         return;
       }
 
+      // Pre-flight: verify session is connected before sending
+      if (session.status !== "connected") {
+        console.warn(
+          `[conversation] Session ${session.phoneNumber} is ${session.status}, skipping send for ${conversationId}`,
+        );
+        return; // Leave as pending, will retry when session reconnects
+      }
+
       const personaProfile: PersonaProfile = {
         name: persona.name,
         ageRange: persona.ageRange,
@@ -89,11 +97,33 @@ export async function runConversationStep(
 
       const generated = await ai.generateMessage(personaProfile, ctx, "greeting");
 
-      await wa.sendText(
-        session.waGatewaySessionId,
-        pharmacy.whatsappNumber,
-        generated.text,
-      );
+      try {
+        await wa.sendText(
+          session.waGatewaySessionId,
+          pharmacy.whatsappNumber,
+          generated.text,
+        );
+      } catch (sendErr: any) {
+        console.error(
+          `[conversation] Send failed for ${conversationId}: ${sendErr.message}`,
+        );
+        // Mark session as disconnected so health check can reconnect
+        await db
+          .update(waSessions)
+          .set({ status: "disconnected", updatedAt: new Date() })
+          .where(eq(waSessions.id, session.id));
+        // Increment retry count; fail after 3 retries
+        const newRetry = conv.retryCount + 1;
+        if (newRetry >= 3) {
+          await updateStatus(db, conversationId, "failed");
+        } else {
+          await db
+            .update(conversations)
+            .set({ retryCount: newRetry })
+            .where(eq(conversations.id, conversationId));
+        }
+        return;
+      }
 
       const now = new Date();
       await db.insert(messages).values({
@@ -104,6 +134,16 @@ export async function runConversationStep(
         aiGenerated: "true",
         sentAt: now,
       });
+
+      // Increment daily message count
+      await db
+        .update(waSessions)
+        .set({
+          dailyMessageCount: sql`${waSessions.dailyMessageCount} + 1`,
+          lastActiveAt: now,
+          updatedAt: now,
+        })
+        .where(eq(waSessions.id, session.id));
 
       await db
         .update(conversations)
@@ -120,6 +160,14 @@ export async function runConversationStep(
     case "follow_up": {
       if (!session || !persona) {
         await updateStatus(db, conversationId, "failed");
+        return;
+      }
+
+      // Pre-flight: verify session is connected
+      if (session.status !== "connected") {
+        console.warn(
+          `[conversation] Session ${session.phoneNumber} is ${session.status}, deferring follow-up for ${conversationId}`,
+        );
         return;
       }
 
@@ -154,11 +202,22 @@ export async function runConversationStep(
 
       const generated = await ai.generateMessage(personaProfile, ctx, "follow_up");
 
-      await wa.sendText(
-        session.waGatewaySessionId,
-        pharmacy.whatsappNumber,
-        generated.text,
-      );
+      try {
+        await wa.sendText(
+          session.waGatewaySessionId,
+          pharmacy.whatsappNumber,
+          generated.text,
+        );
+      } catch (sendErr: any) {
+        console.error(
+          `[conversation] Follow-up send failed for ${conversationId}: ${sendErr.message}`,
+        );
+        await db
+          .update(waSessions)
+          .set({ status: "disconnected", updatedAt: new Date() })
+          .where(eq(waSessions.id, session.id));
+        return; // Stay in follow_up, will retry
+      }
 
       const now = new Date();
       await db.insert(messages).values({
@@ -169,6 +228,16 @@ export async function runConversationStep(
         aiGenerated: "true",
         sentAt: now,
       });
+
+      // Increment daily message count
+      await db
+        .update(waSessions)
+        .set({
+          dailyMessageCount: sql`${waSessions.dailyMessageCount} + 1`,
+          lastActiveAt: now,
+          updatedAt: now,
+        })
+        .where(eq(waSessions.id, session.id));
 
       await db
         .update(conversations)
