@@ -2,12 +2,12 @@ import "dotenv/config";
 import { createDb } from "./client.js";
 import { users } from "./schema/users.js";
 import { personas } from "./schema/personas.js";
-import { createHash } from "crypto";
+import bcrypt from "bcryptjs";
 
 const db = createDb(process.env.DATABASE_URL!);
 
 function hashPassword(password: string): string {
-  return createHash("sha256").update(password).digest("hex");
+  return bcrypt.hashSync(password, 10);
 }
 
 async function seed() {
