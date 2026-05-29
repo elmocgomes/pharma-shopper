@@ -53,10 +53,22 @@ export class WaClient {
   async startSession(
     sessionId: string,
   ): Promise<WaQrResult> {
-    return this.request<WaQrResult>("/session/start", {
+    // wa-gateway wraps response in { data: ... } like other endpoints
+    // but the QR may be at top-level or nested — handle both
+    const raw = await this.request<any>("/session/start", {
       method: "POST",
       body: JSON.stringify({ session: sessionId }),
     });
+    // If response has { data: { qr: "..." } }, unwrap it
+    if (raw?.data?.qr) {
+      return { qr: raw.data.qr };
+    }
+    // If response has { qr: "..." } directly
+    if (raw?.qr) {
+      return { qr: raw.qr };
+    }
+    // Return whatever we got
+    return raw as WaQrResult;
   }
 
   async deleteSession(sessionId: string): Promise<void> {
