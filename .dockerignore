@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+**/dist
+.turbo
+.git
+.env
+.env.local
+*.log
+.DS_Store
+wa_credentials
+media
+infra/.env
