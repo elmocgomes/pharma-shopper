@@ -138,7 +138,22 @@ export const waSessionRoutes = new Hono<AppEnv>()
     const [session] = await db.select().from(waSessions).where(eq(waSessions.id, c.req.param("id"))).limit(1);
     if (!session) return c.json({ error: "Not found" }, 404);
 
-    const result = await waClient.startSession(session.waGatewaySessionId);
+    let result;
+    try {
+      result = await waClient.startSession(session.waGatewaySessionId);
+    } catch (err: any) {
+      // If session already exists in wa-gateway, delete it and retry
+      if (err.message?.includes("already exist")) {
+        try {
+          await waClient.deleteSession(session.waGatewaySessionId);
+        } catch {
+          // Ignore delete errors
+        }
+        result = await waClient.startSession(session.waGatewaySessionId);
+      } else {
+        return c.json({ error: err.message || "Failed to start session" }, 500);
+      }
+    }
 
     await db
       .update(waSessions)
