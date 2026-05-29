@@ -2,6 +2,14 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { LoginPage } from "./pages/Login";
 import { DashboardPage } from "./pages/Dashboard";
+import { WhatsAppPage } from "./pages/WhatsApp";
+import { PersonasPage } from "./pages/Personas";
+import { PharmaciesPage } from "./pages/Pharmacies";
+import { ProductsPage } from "./pages/Products";
+import { CampaignsPage } from "./pages/Campaigns";
+import { ConversationThreadPage } from "./pages/ConversationThread";
+import { PricesPage } from "./pages/Prices";
+import { SettingsPage } from "./pages/Settings";
 import { useAuth } from "./hooks/useAuth";
 
 export function App() {
@@ -15,23 +23,16 @@ export function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/whatsapp" element={<Placeholder title="WhatsApp Numbers" />} />
-        <Route path="/personas" element={<Placeholder title="Personas" />} />
-        <Route path="/pharmacies" element={<Placeholder title="Farmácias" />} />
-        <Route path="/products" element={<Placeholder title="Produtos" />} />
-        <Route path="/campaigns" element={<Placeholder title="Campanhas" />} />
-        <Route path="/prices" element={<Placeholder title="Análise de Preços" />} />
-        <Route path="/settings" element={<Placeholder title="Configurações" />} />
+        <Route path="/whatsapp" element={<WhatsAppPage />} />
+        <Route path="/personas" element={<PersonasPage />} />
+        <Route path="/pharmacies" element={<PharmaciesPage />} />
+        <Route path="/products" element={<ProductsPage />} />
+        <Route path="/campaigns" element={<CampaignsPage />} />
+        <Route path="/conversations/:id" element={<ConversationThreadPage />} />
+        <Route path="/prices" element={<PricesPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
-  );
-}
-
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div className="flex items-center justify-center h-full">
-      <p className="text-gray-400 text-lg">{title} — Sprint 1</p>
-    </div>
   );
 }

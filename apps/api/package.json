@@ -15,6 +15,8 @@
     "@pharma-shopper/db": "workspace:*",
     "drizzle-orm": "^0.44.0",
     "@pharma-shopper/shared": "workspace:*",
+    "@pharma-shopper/wa-client": "workspace:*",
+    "bullmq": "^5.30.0",
     "hono": "^4.6.0",
     "jsonwebtoken": "^9.0.0",
     "bcryptjs": "^2.4.3",

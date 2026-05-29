@@ -1,0 +1,167 @@
+import { Worker, type Job } from "bullmq";
+import { eq, and, lt, inArray, sql, isNotNull } from "drizzle-orm";
+import type { Db } from "@pharma-shopper/db";
+import { conversations, waSessions, campaigns } from "@pharma-shopper/db";
+
+const RESPONSE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const WARMUP_DAYS = 3;
+const WARMUP_DAILY_LIMIT = 10;
+
+interface MaintenanceJobData {
+  task: "daily_reset" | "timeout_check" | "warmup_enforce";
+}
+
+export function createMaintenanceWorker(redisUrl: string, db: Db) {
+  const worker = new Worker<MaintenanceJobData>(
+    "maintenance",
+    async (job: Job<MaintenanceJobData>) => {
+      switch (job.data.task) {
+        case "daily_reset":
+          return await resetDailyCounts(db);
+        case "timeout_check":
+          return await checkTimeouts(db);
+        case "warmup_enforce":
+          return await enforceWarmupLimits(db);
+        default:
+          throw new Error(`Unknown maintenance task: ${job.data.task}`);
+      }
+    },
+    {
+      connection: { url: redisUrl },
+      concurrency: 1,
+    },
+  );
+
+  return worker;
+}
+
+/**
+ * Reset daily message counts to 0 for all WhatsApp sessions.
+ * Should run once at midnight (BRT / UTC-3).
+ */
+async function resetDailyCounts(db: Db): Promise<{ resetCount: number }> {
+  const today = new Date().toISOString().split("T")[0];
+
+  const result = await db
+    .update(waSessions)
+    .set({
+      dailyMessageCount: 0,
+      dailyCountResetAt: today,
+      updatedAt: new Date(),
+    })
+    .where(
+      sql`${waSessions.dailyCountResetAt} IS NULL OR ${waSessions.dailyCountResetAt} < ${today}`,
+    );
+
+  const count = (result as any).rowCount ?? 0;
+  console.log(`[maintenance] Reset daily counts for ${count} sessions`);
+  return { resetCount: count };
+}
+
+/**
+ * Check for conversations stuck in awaiting_response beyond the timeout.
+ * Marks them as "timeout" so they don't block campaigns.
+ */
+async function checkTimeouts(db: Db): Promise<{ timedOut: number }> {
+  const cutoff = new Date(Date.now() - RESPONSE_TIMEOUT_MS);
+
+  const staleConversations = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.status, "awaiting_response"),
+        isNotNull(conversations.lastMessageAt),
+        lt(conversations.lastMessageAt, cutoff),
+      ),
+    );
+
+  if (staleConversations.length === 0) {
+    console.log("[maintenance] No timed-out conversations found");
+    return { timedOut: 0 };
+  }
+
+  const ids = staleConversations.map((c) => c.id);
+
+  await db
+    .update(conversations)
+    .set({
+      status: "timeout",
+      completedAt: new Date(),
+    })
+    .where(inArray(conversations.id, ids));
+
+  console.log(
+    `[maintenance] Marked ${ids.length} conversations as timed out`,
+  );
+
+  // Check if any campaigns are now fully complete
+  const affectedCampaignIds = await db
+    .select({ campaignId: conversations.campaignId })
+    .from(conversations)
+    .where(inArray(conversations.id, ids));
+
+  const uniqueCampaignIds = [
+    ...new Set(affectedCampaignIds.map((c) => c.campaignId)),
+  ];
+
+  for (const campaignId of uniqueCampaignIds) {
+    const [remaining] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.campaignId, campaignId),
+          inArray(conversations.status, [
+            "pending",
+            "initial",
+            "awaiting_response",
+            "parsing",
+            "follow_up",
+          ]),
+        ),
+      );
+
+    if (remaining && remaining.count === 0) {
+      await db
+        .update(campaigns)
+        .set({ status: "completed" })
+        .where(
+          and(
+            eq(campaigns.id, campaignId),
+            eq(campaigns.status, "running"),
+          ),
+        );
+      console.log(`[maintenance] Campaign ${campaignId} auto-completed (all conversations done)`);
+    }
+  }
+
+  return { timedOut: ids.length };
+}
+
+/**
+ * Enforce warmup limits on new WhatsApp sessions.
+ * Sessions created within the warmup period have a lower daily message cap.
+ */
+async function enforceWarmupLimits(db: Db): Promise<{ adjusted: number }> {
+  const warmupCutoff = new Date();
+  warmupCutoff.setDate(warmupCutoff.getDate() - WARMUP_DAYS);
+
+  // Sessions still in warmup period: created after the cutoff
+  const result = await db
+    .update(waSessions)
+    .set({
+      maxDailyMessages: WARMUP_DAILY_LIMIT,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        sql`${waSessions.createdAt} > ${warmupCutoff.toISOString()}`,
+        sql`${waSessions.maxDailyMessages} > ${WARMUP_DAILY_LIMIT}`,
+      ),
+    );
+
+  const count = (result as any).rowCount ?? 0;
+  console.log(`[maintenance] Enforced warmup limits on ${count} sessions`);
+  return { adjusted: count };
+}

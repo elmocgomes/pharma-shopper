@@ -1,2 +1,9 @@
-// Sprint 1: Typed HTTP client for wa-gateway REST API
-export {};
+export { WaClient, type WaClientConfig } from "./client.js";
+export type {
+  WaSession,
+  WaSessionDetail,
+  WaSendResult,
+  WaQrResult,
+  WaWebhookMessage,
+  WaWebhookSession,
+} from "./types.js";

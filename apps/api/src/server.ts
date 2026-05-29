@@ -6,6 +6,15 @@ import { env } from "./env.js";
 import { healthRoutes } from "./routes/health.js";
 import { authRoutes } from "./routes/auth.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { pharmacyRoutes } from "./routes/pharmacies.js";
+import { productRoutes } from "./routes/products.js";
+import { personaRoutes } from "./routes/personas.js";
+import { waSessionRoutes } from "./routes/wa-sessions.js";
+import { campaignRoutes } from "./routes/campaigns.js";
+import { conversationRoutes } from "./routes/conversations.js";
+import { priceRoutes } from "./routes/prices.js";
+import { statsRoutes } from "./routes/stats.js";
+import { settingsRoutes } from "./routes/settings.js";
 
 export type AppEnv = {
   Variables: {
@@ -26,7 +35,16 @@ export function createApp() {
     })
     .route("/", healthRoutes)
     .route("/auth", authRoutes)
-    .route("/webhooks", webhookRoutes);
+    .route("/webhooks", webhookRoutes)
+    .route("/pharmacies", pharmacyRoutes)
+    .route("/products", productRoutes)
+    .route("/personas", personaRoutes)
+    .route("/wa-sessions", waSessionRoutes)
+    .route("/campaigns", campaignRoutes)
+    .route("/conversations", conversationRoutes)
+    .route("/prices", priceRoutes)
+    .route("/stats", statsRoutes)
+    .route("/settings", settingsRoutes);
 
   return app;
 }

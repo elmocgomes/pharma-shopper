@@ -7,16 +7,22 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/worker/package.json ./apps/worker/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/db/package.json ./packages/db/
+COPY packages/wa-client/package.json ./packages/wa-client/
+COPY packages/ai/package.json ./packages/ai/
 RUN pnpm install --frozen-lockfile
 
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=deps /app/packages/db/node_modules ./packages/db/node_modules
+COPY --from=deps /app/packages/wa-client/node_modules ./packages/wa-client/node_modules
+COPY --from=deps /app/packages/ai/node_modules ./packages/ai/node_modules
 COPY --from=deps /app/apps/worker/node_modules ./apps/worker/node_modules
 COPY . .
 RUN pnpm --filter @pharma-shopper/shared build && \
     pnpm --filter @pharma-shopper/db build && \
+    pnpm --filter @pharma-shopper/wa-client build && \
+    pnpm --filter @pharma-shopper/ai build && \
     pnpm --filter @pharma-shopper/worker build
 
 FROM base AS runner
@@ -26,6 +32,10 @@ COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 COPY --from=build /app/packages/shared/package.json ./packages/shared/
 COPY --from=build /app/packages/db/dist ./packages/db/dist
 COPY --from=build /app/packages/db/package.json ./packages/db/
+COPY --from=build /app/packages/wa-client/dist ./packages/wa-client/dist
+COPY --from=build /app/packages/wa-client/package.json ./packages/wa-client/
+COPY --from=build /app/packages/ai/dist ./packages/ai/dist
+COPY --from=build /app/packages/ai/package.json ./packages/ai/
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
 WORKDIR /app/apps/worker

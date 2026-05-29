@@ -26,9 +26,15 @@ importers:
       '@pharma-shopper/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@pharma-shopper/wa-client':
+        specifier: workspace:*
+        version: link:../../packages/wa-client
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
+      bullmq:
+        specifier: ^5.30.0
+        version: 5.77.6
       drizzle-orm:
         specifier: ^0.44.0
         version: 0.44.7(postgres@3.4.9)
@@ -112,15 +118,24 @@ importers:
 
   apps/worker:
     dependencies:
+      '@pharma-shopper/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@pharma-shopper/db':
         specifier: workspace:*
         version: link:../../packages/db
       '@pharma-shopper/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@pharma-shopper/wa-client':
+        specifier: workspace:*
+        version: link:../../packages/wa-client
       bullmq:
         specifier: ^5.30.0
         version: 5.77.6
+      drizzle-orm:
+        specifier: ^0.44.0
+        version: 0.44.7(postgres@3.4.9)
     devDependencies:
       dotenv:
         specifier: ^16.4.0

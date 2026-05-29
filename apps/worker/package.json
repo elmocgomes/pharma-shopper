@@ -11,9 +11,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@pharma-shopper/ai": "workspace:*",
     "@pharma-shopper/db": "workspace:*",
     "@pharma-shopper/shared": "workspace:*",
-    "bullmq": "^5.30.0"
+    "@pharma-shopper/wa-client": "workspace:*",
+    "bullmq": "^5.30.0",
+    "drizzle-orm": "^0.44.0"
   },
   "devDependencies": {
     "dotenv": "^16.4.0",
