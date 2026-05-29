@@ -1,0 +1,24 @@
+{
+  "name": "@pharma-shopper/worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@pharma-shopper/db": "workspace:*",
+    "@pharma-shopper/shared": "workspace:*",
+    "bullmq": "^5.30.0"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

@@ -1,0 +1,5 @@
+import { Hono } from "hono";
+
+export const healthRoutes = new Hono().get("/health", (c) => {
+  return c.json({ status: "ok", timestamp: new Date().toISOString() });
+});
