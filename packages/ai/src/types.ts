@@ -5,6 +5,8 @@ export interface PersonaProfile {
   occupation: string | null;
   communicationStyle: "formal" | "casual" | "anxious";
   scenarioTemplates: string[];
+  /** CPF for pharmacy discount programs (when pharmacy asks) */
+  cpf?: string | null;
 }
 
 export interface ProductInfo {
@@ -34,6 +36,7 @@ export type MessageType =
   | "inquiry"
   | "follow_up"
   | "phase2_probe"
+  | "cpf_response"
   | "thank_you";
 
 export interface GeneratedMessage {
@@ -85,6 +88,8 @@ export interface ParseResult {
   /** Whether more info is needed via follow-up */
   needsFollowUp: boolean;
   followUpReason: string | null;
+  /** Whether the pharmacy is asking for CPF (for discount programs) */
+  cpfRequested: boolean;
   /** Brief analysis of the pharmacy's response */
   rawAnalysis: string;
 }

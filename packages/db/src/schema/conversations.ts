@@ -61,6 +61,7 @@ export const conversations = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+    followUpCount: integer("follow_up_count").notNull().default(0),
     retryCount: integer("retry_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

@@ -2,6 +2,7 @@ import { eq, and, sql } from "drizzle-orm";
 import type { Db } from "@pharma-shopper/db";
 import {
   conversations,
+  campaigns,
   messages,
   pharmacies,
   personas,
@@ -20,7 +21,7 @@ import {
 } from "@pharma-shopper/ai";
 import { WaClient } from "@pharma-shopper/wa-client";
 
-const MAX_FOLLOW_UPS_PER_PHASE = 2;
+const DEFAULT_MAX_FOLLOW_UPS_PER_PHASE = 3;
 const RESPONSE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 export interface EngineConfig {
@@ -163,19 +164,17 @@ export async function runConversationStep(
         return;
       }
 
-      // Count follow-ups in current phase
-      const outboundCount = prevMsgs.filter(
-        (m) => m.direction === "outbound" && m.aiGenerated === "true",
-      ).length;
+      // Get campaign-level follow-up limit
+      const [campaign] = await db
+        .select()
+        .from(campaigns)
+        .where(eq(campaigns.id, conv.campaignId))
+        .limit(1);
+      const maxFollowUps = (campaign as any)?.maxFollowUpsPerPhase ?? DEFAULT_MAX_FOLLOW_UPS_PER_PHASE;
 
-      // In phase1: greeting + up to 2 follow-ups. In phase2: probe + up to 2 follow-ups.
-      const phaseStartCount = phase === "phase1_branded" ? 1 : outboundCount - MAX_FOLLOW_UPS_PER_PHASE - 1;
-      const followUpsInPhase = outboundCount - phaseStartCount;
-
-      if (followUpsInPhase >= MAX_FOLLOW_UPS_PER_PHASE) {
+      if (conv.followUpCount >= maxFollowUps) {
         // Exceeded follow-ups for this phase
         if (phase === "phase1_branded") {
-          // Move to phase 2 even without complete data
           await transitionToPhase2(db, conversationId, false);
         } else {
           await updateStatus(db, conversationId, "completed");
@@ -186,7 +185,10 @@ export async function runConversationStep(
       const personaProfile = buildPersonaProfile(persona);
       const ctx = buildContext(pharmacy, productInfos, phase, prevMsgs);
 
-      const generated = await ai.generateMessage(personaProfile, ctx, "follow_up");
+      // Determine message type — if CPF was requested, send CPF first
+      const messageType: MessageType =
+        (conv as any).pendingCpfResponse ? "cpf_response" : "follow_up";
+      const generated = await ai.generateMessage(personaProfile, ctx, messageType);
 
       const sendOk = await safeSend(config, session, pharmacy, generated.text, conversationId);
       if (!sendOk) return; // Stay in follow_up, will retry
@@ -205,7 +207,11 @@ export async function runConversationStep(
 
       await db
         .update(conversations)
-        .set({ status: "awaiting_response", lastMessageAt: now })
+        .set({
+          status: "awaiting_response",
+          lastMessageAt: now,
+          followUpCount: sql`${conversations.followUpCount} + 1`,
+        })
         .where(eq(conversations.id, conversationId));
 
       break;
@@ -342,6 +348,16 @@ export async function handleIncomingMessage(
     }
   }
 
+  // Handle CPF request — pharmacy asked for CPF, we need to respond with it
+  if (result.cpfRequested) {
+    console.log(
+      `[conversation] ${conversationId}: Pharmacy requested CPF, queuing CPF response`,
+    );
+    // Don't count CPF exchange as a follow-up — it's a side interaction
+    await updateStatus(db, conversationId, "follow_up");
+    return;
+  }
+
   // Decide next step based on phase and results
   if (phase === "phase1_branded") {
     // Record whether spontaneous substitution occurred
@@ -383,6 +399,7 @@ function buildPersonaProfile(persona: any): PersonaProfile {
     occupation: persona.occupation,
     communicationStyle: persona.communicationStyle,
     scenarioTemplates: persona.scenarioTemplates as string[],
+    cpf: persona.cpf || null,
   };
 }
 
@@ -414,14 +431,15 @@ async function transitionToPhase2(
   console.log(
     `[conversation] ${conversationId}: Transitioning to phase 2 (alternatives probe)`,
   );
-  // Set phase to phase2 and status to follow_up so the engine sends the probe message
-  // We use "follow_up" status but the message type will be "phase2_probe"
+  // Set phase to phase2 and status to initial so the engine sends the probe message
+  // Reset followUpCount for the new phase
   await db
     .update(conversations)
     .set({
       phase: "phase2_alternatives",
-      status: "initial", // Will trigger a new outbound message
+      status: "initial",
       spontaneousSubstitution: spontaneous,
+      followUpCount: 0,
     })
     .where(eq(conversations.id, conversationId));
 }

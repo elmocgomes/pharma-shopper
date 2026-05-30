@@ -26,6 +26,7 @@ const createSchema = z.object({
   businessHoursStart: z.string().optional().nullable().transform((v) => v ?? undefined),
   businessHoursEnd: z.string().optional().nullable().transform((v) => v ?? undefined),
   rateLimitPerHour: z.number().int().positive().optional().nullable().transform((v) => v ?? undefined),
+  maxFollowUpsPerPhase: z.number().int().min(1).max(10).optional().nullable().transform((v) => v ?? undefined),
   productIds: z.array(z.string().uuid()).min(1),
   pharmacyIds: z.array(z.string().uuid()).min(1),
 });
@@ -36,6 +37,7 @@ const updateSchema = z.object({
   businessHoursStart: z.string().optional().nullable().transform((v) => v ?? undefined),
   businessHoursEnd: z.string().optional().nullable().transform((v) => v ?? undefined),
   rateLimitPerHour: z.number().int().positive().optional().nullable().transform((v) => v ?? undefined),
+  maxFollowUpsPerPhase: z.number().int().min(1).max(10).optional().nullable().transform((v) => v ?? undefined),
 });
 
 export const campaignRoutes = new Hono<AppEnv>()

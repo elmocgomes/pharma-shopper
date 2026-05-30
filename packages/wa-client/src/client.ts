@@ -146,6 +146,31 @@ export class WaClient {
     return res.data;
   }
 
+  /**
+   * Download media (image/video/audio/document) from wa-gateway.
+   * Returns the raw Buffer and content type.
+   */
+  async downloadMedia(
+    mediaUrl: string,
+  ): Promise<{ buffer: Buffer; contentType: string }> {
+    // mediaUrl from wa-gateway webhook is usually a full URL or relative path
+    const url = mediaUrl.startsWith("http")
+      ? mediaUrl
+      : `${this.baseUrl}${mediaUrl}`;
+
+    const res = await fetch(url, {
+      headers: this.apiKey ? { key: this.apiKey } : {},
+    });
+
+    if (!res.ok) {
+      throw new Error(`wa-gateway media download ${res.status}: ${await res.text()}`);
+    }
+
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const contentType = res.headers.get("content-type") || "image/jpeg";
+    return { buffer, contentType };
+  }
+
   async checkNumberExists(
     sessionId: string,
     target: string,

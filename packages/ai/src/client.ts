@@ -107,6 +107,11 @@ const PHARMACY_DATA_TOOL: Anthropic.Tool = {
         description:
           "Whether the response is incomplete and needs a follow-up question (missing price or availability)",
       },
+      cpfRequested: {
+        type: "boolean",
+        description:
+          "Whether the pharmacy is asking for CPF (e.g. for discount programs like Farmácia Popular, loyalty card, etc.)",
+      },
       followUpReason: {
         type: ["string", "null"],
         description: "Why follow-up is needed, if applicable",
@@ -120,6 +125,7 @@ const PHARMACY_DATA_TOOL: Anthropic.Tool = {
       "products",
       "spontaneousSubstitution",
       "needsFollowUp",
+      "cpfRequested",
       "rawAnalysis",
     ],
   },
@@ -206,6 +212,7 @@ export class AiClient {
         spontaneousSubstitution: false,
         spontaneousDetails: null,
         needsFollowUp: true,
+        cpfRequested: false,
         followUpReason: "Could not parse response",
         rawAnalysis: "No tool output returned",
       };
@@ -216,6 +223,7 @@ export class AiClient {
       spontaneousSubstitution: boolean;
       spontaneousDetails?: string | null;
       needsFollowUp: boolean;
+      cpfRequested?: boolean;
       followUpReason?: string | null;
       rawAnalysis: string;
     };
@@ -225,8 +233,59 @@ export class AiClient {
       spontaneousSubstitution: input.spontaneousSubstitution ?? false,
       spontaneousDetails: input.spontaneousDetails ?? null,
       needsFollowUp: input.needsFollowUp ?? false,
+      cpfRequested: input.cpfRequested ?? false,
       followUpReason: input.followUpReason ?? null,
       rawAnalysis: input.rawAnalysis || "",
     };
+  }
+
+  /**
+   * Describe an image sent by a pharmacy using Claude Vision.
+   * Returns a text description that can be fed into the regular parser.
+   */
+  async describeImage(
+    imageBase64: string,
+    mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+    contextHint?: string,
+  ): Promise<string> {
+    const response = await this.client.messages.create({
+      model: this.model,
+      max_tokens: 500,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: mediaType,
+                data: imageBase64,
+              },
+            },
+            {
+              type: "text",
+              text:
+                "Esta é uma foto enviada por uma farmácia durante uma conversa no WhatsApp. " +
+                "Descreva detalhadamente o conteúdo da imagem focando em:\n" +
+                "- Nomes dos produtos/medicamentos visíveis\n" +
+                "- Marcas e fabricantes\n" +
+                "- Preços exibidos (em R$)\n" +
+                "- Dosagens e apresentações\n" +
+                "- Se é genérico ou marca de referência\n" +
+                "- Qualquer informação de disponibilidade\n\n" +
+                (contextHint ? `Contexto: ${contextHint}\n\n` : "") +
+                "Responda APENAS com a descrição factual do que vê na imagem, sem adicionar interpretações.",
+            },
+          ],
+        },
+      ],
+    });
+
+    return response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim();
   }
 }

@@ -30,6 +30,7 @@ export const campaigns = pgTable("campaigns", {
   businessHoursStart: time("business_hours_start").default("08:00"),
   businessHoursEnd: time("business_hours_end").default("18:00"),
   rateLimitPerHour: integer("rate_limit_per_hour").notNull().default(10),
+  maxFollowUpsPerPhase: integer("max_follow_ups_per_phase").notNull().default(3),
   targetStates: text("target_states")
     .array()
     .notNull()

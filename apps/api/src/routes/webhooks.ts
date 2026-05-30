@@ -25,7 +25,11 @@ export const webhookRoutes = new Hono<AppEnv>()
 
     console.log(`[webhook] message from ${body.from} on session ${body.session}`);
 
-    if (!body.from || !body.message) {
+    // Accept messages with text content OR image media
+    const hasText = !!body.message;
+    const hasImage = !!body.media?.image;
+
+    if (!body.from || (!hasText && !hasImage)) {
       return c.json({ received: true, matched: false });
     }
 
@@ -73,11 +77,15 @@ export const webhookRoutes = new Hono<AppEnv>()
     }
 
     const now = new Date();
+    const contentType = hasImage ? "image" : "text";
+    const content = body.message || (hasImage ? "[Imagem recebida]" : "");
+
     await db.insert(messages).values({
       conversationId: matchedConv.id,
       direction: "inbound",
-      contentType: "text",
-      content: body.message,
+      contentType,
+      content,
+      mediaPath: body.media?.image || null,
       sentAt: now,
     });
 
@@ -88,10 +96,13 @@ export const webhookRoutes = new Hono<AppEnv>()
 
     await parseQueue.add("parse-response", {
       conversationId: matchedConv.id,
-      messageText: body.message,
+      messageText: content,
+      imageUrl: body.media?.image || null,
+      // Also pass any caption text alongside the image
+      hasImage,
     });
 
-    console.log(`[webhook] matched conversation ${matchedConv.id}, queued parse job`);
+    console.log(`[webhook] matched conversation ${matchedConv.id} (${contentType}), queued parse job`);
     return c.json({ received: true, matched: true, conversationId: matchedConv.id });
   })
 

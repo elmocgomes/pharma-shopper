@@ -31,7 +31,11 @@ export function buildPersonaSystemPrompt(persona: PersonaProfile, scenario: stri
     "- Aja naturalmente como um cliente real buscando medicamentos\n" +
     "- Seja breve — mensagens de WhatsApp são curtas\n" +
     "- Responda APENAS com a mensagem, sem aspas, sem explicações extras\n" +
-    "- NÃO pergunte sobre genéricos ou alternativas na primeira mensagem — apenas pergunte sobre o produto específico";
+    "- NÃO pergunte sobre genéricos ou alternativas na primeira mensagem — apenas pergunte sobre o produto específico\n" +
+    (persona.cpf
+      ? `- Se a farmácia pedir CPF para desconto ou cadastro, forneça: ${persona.cpf}\n`
+      : "- Se a farmácia pedir CPF, diga que não tem em mãos no momento\n") +
+    "- Se a farmácia enviar uma foto, analise o conteúdo e extraia as informações sobre o(s) produto(s)";
 }
 
 export function buildMessagePrompt(
@@ -63,6 +67,9 @@ export function buildMessagePrompt(
 
     case "phase2_probe":
       return buildPhase2Probe(productList, ctx);
+
+    case "cpf_response":
+      return buildCpfResponse(ctx);
 
     case "thank_you":
       return "A farmácia forneceu as informações. Agradeça de forma natural e encerre a conversa.";
@@ -129,6 +136,15 @@ function buildPhase2Probe(products: string, ctx: ConversationContext): string {
   );
 }
 
+function buildCpfResponse(ctx: ConversationContext): string {
+  return (
+    "A farmácia pediu o CPF (para programa de desconto, cadastro, ou consulta de preço). " +
+    "Responda naturalmente fornecendo o CPF. " +
+    "Algo como 'Claro, é [CPF]' ou 'Meu CPF é [CPF]'. " +
+    "Seja breve e natural. Depois de dar o CPF, pergunte novamente sobre preço/disponibilidade se necessário."
+  );
+}
+
 // --- Parsing prompts ---
 
 export function buildParseSystemPrompt(phase: ConversationPhase): string {
@@ -145,7 +161,14 @@ export function buildParseSystemPrompt(phase: ConversationPhase): string {
     "- Quantidade: 30 comprimidos, 60cp, 1 frasco 120ml, caixa com 20, etc.\n" +
     "- Apresentação: comprimido, cápsula, suspensão, pomada, creme, solução, gotas, etc.\n" +
     "- Princípio ativo: se mencionado\n" +
-    "- Marca vs genérico: se é marca de referência, genérico ou similar\n\n";
+    "- Marca vs genérico: se é marca de referência, genérico ou similar\n\n" +
+    "DETECÇÃO DE CPF:\n" +
+    "- Se a farmácia pedir CPF (ex: 'preciso do cpf', 'qual seu cpf', 'cpf pra ver o desconto'), marque cpfRequested = true\n" +
+    "- Pedidos de CPF são comuns em programas de desconto (Farmácia Popular, etc.)\n\n" +
+    "IMAGENS:\n" +
+    "- Se o texto contém '[Imagem: ...]' é a descrição de uma foto enviada pela farmácia\n" +
+    "- Extraia informações de produto, preço e disponibilidade da descrição da imagem\n" +
+    "- Fotos geralmente mostram prateleiras, embalagens com preços, ou telas de sistema\n\n";
 
   if (phase === "phase1_branded") {
     return (

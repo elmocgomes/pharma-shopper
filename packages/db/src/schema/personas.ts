@@ -27,6 +27,7 @@ export const personas = pgTable("personas", {
     .notNull()
     .$type<string[]>()
     .default([]),
+  cpf: text("cpf"),
   avatarUrl: text("avatar_url"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true })

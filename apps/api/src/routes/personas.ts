@@ -10,6 +10,7 @@ const createSchema = z.object({
   ageRange: z.string().optional().nullable().transform((v) => v ?? undefined),
   gender: z.string().optional().nullable().transform((v) => v ?? undefined),
   occupation: z.string().optional().nullable().transform((v) => v ?? undefined),
+  cpf: z.string().optional().nullable().transform((v) => v ?? undefined),
   communicationStyle: z.enum(personaStyleEnum.enumValues).optional().nullable().transform((v) => v ?? undefined),
   scenarioTemplates: z.array(z.string()).optional().nullable().transform((v) => v ?? undefined),
   avatarUrl: z.string().url().optional().nullable().transform((v) => v ?? undefined).or(z.literal("")),

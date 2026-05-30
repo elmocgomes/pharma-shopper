@@ -10,6 +10,7 @@ interface Persona {
   ageRange: string | null;
   gender: string | null;
   occupation: string | null;
+  cpf: string | null;
   communicationStyle: "formal" | "casual" | "anxious";
   scenarioTemplates: string[];
   avatarUrl: string | null;
@@ -21,6 +22,7 @@ type PersonaForm = {
   ageRange: string;
   gender: string;
   occupation: string;
+  cpf: string;
   communicationStyle: "formal" | "casual" | "anxious";
   scenarioTemplates: string[];
   isActive: boolean;
@@ -202,6 +204,7 @@ function PersonaFormComponent({
   const [ageRange, setAgeRange] = useState(initial?.ageRange ?? "");
   const [gender, setGender] = useState(initial?.gender ?? "");
   const [occupation, setOccupation] = useState(initial?.occupation ?? "");
+  const [cpf, setCpf] = useState(initial?.cpf ?? "");
   const [style, setStyle] = useState<"formal" | "casual" | "anxious">(initial?.communicationStyle ?? "casual");
   const [scenarios, setScenarios] = useState(initial?.scenarioTemplates?.join("\n") ?? "");
   const [isActive, setIsActive] = useState(initial?.isActive ?? true);
@@ -215,6 +218,7 @@ function PersonaFormComponent({
           ageRange,
           gender,
           occupation,
+          cpf,
           communicationStyle: style,
           scenarioTemplates: scenarios.split("\n").map((s) => s.trim()).filter(Boolean),
           isActive,
@@ -267,6 +271,17 @@ function PersonaFormComponent({
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
           />
         </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">CPF (para programas de desconto)</label>
+        <input
+          type="text"
+          value={cpf}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCpf(e.target.value)}
+          placeholder="123.456.789-00"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+        />
+        <p className="text-xs text-gray-400 mt-1">Se a farmácia pedir CPF, a IA fornecerá automaticamente</p>
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Estilo de Comunicação</label>
