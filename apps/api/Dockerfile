@@ -8,6 +8,7 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @pharma-shopper/shared build && \
     pnpm --filter @pharma-shopper/db build && \
     pnpm --filter @pharma-shopper/wa-client build && \
+    pnpm --filter @pharma-shopper/ai build && \
     pnpm --filter @pharma-shopper/api build
 
 FROM base AS runner
@@ -23,6 +24,9 @@ COPY --from=build /app/packages/db/node_modules ./packages/db/node_modules
 COPY --from=build /app/packages/wa-client/dist ./packages/wa-client/dist
 COPY --from=build /app/packages/wa-client/package.json ./packages/wa-client/
 COPY --from=build /app/packages/wa-client/node_modules ./packages/wa-client/node_modules
+COPY --from=build /app/packages/ai/dist ./packages/ai/dist
+COPY --from=build /app/packages/ai/package.json ./packages/ai/
+COPY --from=build /app/packages/ai/node_modules ./packages/ai/node_modules
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
 COPY --from=build /app/pnpm-workspace.yaml ./
