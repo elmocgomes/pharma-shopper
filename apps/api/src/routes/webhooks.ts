@@ -52,7 +52,7 @@ export const webhookRoutes = new Hono<AppEnv>()
       .where(
         and(
           eq(conversations.waSessionId, session.id),
-          inArray(conversations.status, ["initial", "awaiting_response", "follow_up"]),
+          inArray(conversations.status, ["initial", "awaiting_response", "follow_up", "timeout"]),
         ),
       );
 
@@ -89,9 +89,16 @@ export const webhookRoutes = new Hono<AppEnv>()
       sentAt: now,
     });
 
+    // If conversation was timed out, reactivate it
+    const updateFields: Record<string, unknown> = { lastMessageAt: now };
+    if (matchedConv.status === "timeout") {
+      updateFields.status = "awaiting_response";
+      console.log(`[webhook] reactivating timed-out conversation ${matchedConv.id}`);
+    }
+
     await db
       .update(conversations)
-      .set({ lastMessageAt: now })
+      .set(updateFields)
       .where(eq(conversations.id, matchedConv.id));
 
     await parseQueue.add("parse-response", {
