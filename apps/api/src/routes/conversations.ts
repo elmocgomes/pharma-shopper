@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import {
   conversations,
   messages,
@@ -64,4 +64,34 @@ export const conversationRoutes = new Hono<AppEnv>()
     }));
 
     return c.json({ data: result });
+  })
+
+  // Reset a conversation: delete inbound messages + price records, reset status to awaiting_response
+  .post("/:id/reset", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    const [conv] = await db.select().from(conversations).where(eq(conversations.id, id)).limit(1);
+    if (!conv) return c.json({ error: "Not found" }, 404);
+
+    // Delete price records for this conversation
+    await db.delete(priceRecords).where(eq(priceRecords.conversationId, id));
+
+    // Delete inbound messages (keep outbound — those are the real sent messages)
+    await db
+      .delete(messages)
+      .where(and(eq(messages.conversationId, id), eq(messages.direction, "inbound")));
+
+    // Reset conversation status back to awaiting_response
+    await db
+      .update(conversations)
+      .set({
+        status: "awaiting_response",
+        completedAt: null,
+        spontaneousSubstitution: false,
+        analysisStatus: "pending",
+      })
+      .where(eq(conversations.id, id));
+
+    return c.json({ ok: true, message: "Conversation reset — fake inbound data removed" });
   });
