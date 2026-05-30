@@ -21,6 +21,8 @@ import { analysisRoutes } from "./routes/analyses.js";
 import { campaignFlowRoutes } from "./routes/campaign-flows.js";
 import { campaignChatRoutes } from "./routes/campaign-chat.js";
 import { campaignHealthRoutes } from "./routes/campaign-health.js";
+import { logRoutes } from "./routes/logs.js";
+import { messageExchangeRoutes } from "./routes/message-exchange.js";
 
 export type AppEnv = {
   Variables: {
@@ -56,7 +58,9 @@ export function createApp() {
     .route("/", analysisRoutes) // Mounted at root: /conversations/:id/analyses, /campaigns/:id/reanalyze
     .route("/campaigns", campaignFlowRoutes) // /campaigns/:id/flows, /campaigns/:id/calibrate
     .route("/campaigns", campaignChatRoutes) // /campaigns/:id/chat
-    .route("/", campaignHealthRoutes); // /campaigns/:id/health, /conversations/:id/pause
+    .route("/", campaignHealthRoutes) // /campaigns/:id/health, /conversations/:id/pause
+    .route("/logs", logRoutes)
+    .route("/messages", messageExchangeRoutes);
 
   return app;
 }

@@ -11,6 +11,8 @@ import {
   LogOut,
   GitBranch,
   Bot,
+  ScrollText,
+  MessagesSquare,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { cn } from "../lib/utils";
@@ -25,6 +27,8 @@ const navItems = [
   { to: "/flows", icon: GitBranch, label: "Fluxos" },
   { to: "/agents", icon: Bot, label: "Agentes" },
   { to: "/prices", icon: TrendingUp, label: "Preços" },
+  { to: "/messages", icon: MessagesSquare, label: "Mensagens" },
+  { to: "/logs", icon: ScrollText, label: "Logs" },
   { to: "/settings", icon: Settings, label: "Configurações" },
 ];
 
