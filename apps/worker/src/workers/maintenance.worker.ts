@@ -1,8 +1,9 @@
-import { Worker, type Job } from "bullmq";
+import { Worker, Queue, type Job } from "bullmq";
 import { eq, and, lt, inArray, sql, isNotNull, ne } from "drizzle-orm";
 import type { Db } from "@pharma-shopper/db";
 import { conversations, waSessions, campaigns } from "@pharma-shopper/db";
 import type { WaClient } from "@pharma-shopper/wa-client";
+import { QUEUE_NAMES } from "../queues.js";
 
 const RESPONSE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const WARMUP_DAYS = 3;
@@ -20,7 +21,7 @@ export function createMaintenanceWorker(redisUrl: string, db: Db, wa?: WaClient)
         case "daily_reset":
           return await resetDailyCounts(db);
         case "timeout_check":
-          return await checkTimeouts(db);
+          return await checkTimeouts(db, redisUrl);
         case "warmup_enforce":
           return await enforceWarmupLimits(db);
         case "session_health":
@@ -65,7 +66,7 @@ async function resetDailyCounts(db: Db): Promise<{ resetCount: number }> {
  * Check for conversations stuck in awaiting_response beyond the timeout.
  * Marks them as "timeout" so they don't block campaigns.
  */
-async function checkTimeouts(db: Db): Promise<{ timedOut: number }> {
+async function checkTimeouts(db: Db, redisUrl: string): Promise<{ timedOut: number }> {
   const cutoff = new Date(Date.now() - RESPONSE_TIMEOUT_MS);
 
   const staleConversations = await db
@@ -98,8 +99,16 @@ async function checkTimeouts(db: Db): Promise<{ timedOut: number }> {
         spontaneousSubstitution: false,
       })
       .where(inArray(conversations.id, phase1Ids));
+    // Enqueue conversation jobs so the worker sends the phase 2 probe
+    const convQueue = new Queue(QUEUE_NAMES.CONVERSATION, { connection: { url: redisUrl } });
+    for (const id of phase1Ids) {
+      await convQueue.add("phase2-probe", { conversationId: id }, {
+        delay: 5000 + Math.random() * 25000,  // 5-30s random delay for anti-detection
+      });
+    }
+    await convQueue.close();
     console.log(
-      `[maintenance] ${phase1Ids.length} phase-1 timeouts → transitioned to phase 2`,
+      `[maintenance] ${phase1Ids.length} phase-1 timeouts → transitioned to phase 2, enqueued ${phase1Ids.length} conversation jobs`,
     );
   }
 

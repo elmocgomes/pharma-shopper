@@ -142,7 +142,7 @@ export async function runConversationStep(
         .update(conversations)
         .set({
           status: "awaiting_response",
-          phase: "phase1_branded",
+          phase,  // preserve current phase (phase1_branded or phase2_alternatives)
           startedAt: conv.startedAt || now,
           lastMessageAt: now,
         })

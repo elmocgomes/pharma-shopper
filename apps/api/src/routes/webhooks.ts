@@ -52,7 +52,7 @@ export const webhookRoutes = new Hono<AppEnv>()
       .where(
         and(
           eq(conversations.waSessionId, session.id),
-          inArray(conversations.status, ["awaiting_response", "follow_up"]),
+          inArray(conversations.status, ["initial", "awaiting_response", "follow_up"]),
         ),
       );
 
