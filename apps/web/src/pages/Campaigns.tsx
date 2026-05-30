@@ -173,8 +173,8 @@ function CampaignList({ onCreate, onSelect }: { onCreate: () => void; onSelect: 
                     <button onClick={() => onSelect(c.id)} className="p-2 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors" title="Detalhes">
                       <Eye className="w-4 h-4" />
                     </button>
-                    {c.status === "draft" && (
-                      <button onClick={() => deleteMut.mutate(c.id)} className="p-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors" title="Excluir">
+                    {["draft", "cancelled", "completed"].includes(c.status) && (
+                      <button onClick={() => { if (confirm("Tem certeza que deseja excluir esta campanha?")) deleteMut.mutate(c.id); }} className="p-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors" title="Excluir">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
