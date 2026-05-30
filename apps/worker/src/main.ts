@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { createDb } from "@pharma-shopper/db";
-import { AiClient } from "@pharma-shopper/ai";
+import { AiClient, AgentRegistry } from "@pharma-shopper/ai";
 import { WaClient } from "@pharma-shopper/wa-client";
 import { createQueues, QUEUE_NAMES } from "./queues.js";
 import { createPingWorker } from "./workers/ping.worker.js";
@@ -8,6 +8,9 @@ import { createCampaignWorker } from "./workers/campaign.worker.js";
 import { createConversationWorker } from "./workers/conversation.worker.js";
 import { createParseWorker } from "./workers/parse.worker.js";
 import { createMaintenanceWorker } from "./workers/maintenance.worker.js";
+import { createAnalystWorker } from "./workers/analyst.worker.js";
+import { createCalibrateWorker } from "./workers/calibrate.worker.js";
+import { createMonitorWorker } from "./workers/monitor.worker.js";
 
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 const databaseUrl = process.env.DATABASE_URL || "";
@@ -18,6 +21,7 @@ const waGatewayKey = process.env.WA_GATEWAY_KEY || "";
 const db = createDb(databaseUrl);
 const ai = new AiClient({ apiKey: anthropicKey });
 const wa = new WaClient({ baseUrl: waGatewayUrl, apiKey: waGatewayKey });
+const registry = new AgentRegistry(anthropicKey);
 
 const queues = createQueues(redisUrl);
 const pingWorker = createPingWorker(redisUrl);
@@ -25,6 +29,9 @@ const campaignWorker = createCampaignWorker(redisUrl, db);
 const conversationWorker = createConversationWorker(redisUrl, db, ai, wa);
 const parseWorker = createParseWorker(redisUrl, db, ai, wa);
 const maintenanceWorker = createMaintenanceWorker(redisUrl, db, wa);
+const analystWorker = createAnalystWorker(redisUrl, db, registry);
+const calibrateWorker = createCalibrateWorker(redisUrl, db, registry);
+const monitorWorker = createMonitorWorker(redisUrl, db, registry);
 
 // Schedule repeatable maintenance jobs
 async function scheduleMaintenanceJobs() {
@@ -98,6 +105,27 @@ maintenanceWorker.on("failed", (job, err) => {
   console.error(`[maintenance] job ${job?.id} failed:`, err.message);
 });
 
+analystWorker.on("completed", (job) => {
+  console.log(`[analyst] job ${job.id} completed`);
+});
+analystWorker.on("failed", (job, err) => {
+  console.error(`[analyst] job ${job?.id} failed:`, err.message);
+});
+
+calibrateWorker.on("completed", (job) => {
+  console.log(`[calibrate] job ${job.id} completed`);
+});
+calibrateWorker.on("failed", (job, err) => {
+  console.error(`[calibrate] job ${job?.id} failed:`, err.message);
+});
+
+monitorWorker.on("completed", (job) => {
+  console.log(`[monitor] job ${job.id} completed`);
+});
+monitorWorker.on("failed", (job, err) => {
+  console.error(`[monitor] job ${job?.id} failed:`, err.message);
+});
+
 console.log(`Worker started. Queues: ${Object.values(QUEUE_NAMES).join(", ")}`);
 
 async function shutdown() {
@@ -108,6 +136,9 @@ async function shutdown() {
     conversationWorker.close(),
     parseWorker.close(),
     maintenanceWorker.close(),
+    analystWorker.close(),
+    calibrateWorker.close(),
+    monitorWorker.close(),
   ]);
   process.exit(0);
 }

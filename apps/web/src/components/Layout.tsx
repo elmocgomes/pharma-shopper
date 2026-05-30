@@ -9,6 +9,8 @@ import {
   TrendingUp,
   Settings,
   LogOut,
+  GitBranch,
+  Bot,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { cn } from "../lib/utils";
@@ -20,6 +22,8 @@ const navItems = [
   { to: "/pharmacies", icon: Building2, label: "Farmácias" },
   { to: "/products", icon: Package, label: "Produtos" },
   { to: "/campaigns", icon: Megaphone, label: "Campanhas" },
+  { to: "/flows", icon: GitBranch, label: "Fluxos" },
+  { to: "/agents", icon: Bot, label: "Agentes" },
   { to: "/prices", icon: TrendingUp, label: "Preços" },
   { to: "/settings", icon: Settings, label: "Configurações" },
 ];

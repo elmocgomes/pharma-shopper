@@ -9,6 +9,7 @@ import {
   pgEnum,
 } from "drizzle-orm/pg-core";
 import { conversations } from "./conversations.js";
+import { conversationAnalyses } from "./conversation-analyses.js";
 import { products } from "./products.js";
 import { pharmacies } from "./pharmacies.js";
 
@@ -31,6 +32,7 @@ export const priceRecords = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     conversationId: uuid("conversation_id").references(() => conversations.id),
+    analysisId: uuid("analysis_id").references(() => conversationAnalyses.id),
     productId: uuid("product_id")
       .notNull()
       .references(() => products.id),

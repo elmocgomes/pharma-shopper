@@ -16,6 +16,7 @@
     "drizzle-orm": "^0.44.0",
     "@pharma-shopper/shared": "workspace:*",
     "@pharma-shopper/wa-client": "workspace:*",
+    "@pharma-shopper/ai": "workspace:*",
     "bullmq": "^5.30.0",
     "hono": "^4.6.0",
     "jsonwebtoken": "^9.0.0",

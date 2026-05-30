@@ -10,6 +10,8 @@ import { CampaignsPage } from "./pages/Campaigns";
 import { ConversationThreadPage } from "./pages/ConversationThread";
 import { PricesPage } from "./pages/Prices";
 import { SettingsPage } from "./pages/Settings";
+import { FlowsPage } from "./pages/Flows";
+import { AgentsPage } from "./pages/Agents";
 import { useAuth } from "./hooks/useAuth";
 
 export function App() {
@@ -29,6 +31,8 @@ export function App() {
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/campaigns" element={<CampaignsPage />} />
         <Route path="/conversations/:id" element={<ConversationThreadPage />} />
+        <Route path="/flows" element={<FlowsPage />} />
+        <Route path="/agents" element={<AgentsPage />} />
         <Route path="/prices" element={<PricesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

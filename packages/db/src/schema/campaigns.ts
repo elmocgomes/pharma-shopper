@@ -35,6 +35,7 @@ export const campaigns = pgTable("campaigns", {
     .array()
     .notNull()
     .default([]),
+  calibrationStatus: text("calibration_status").notNull().default("pending"),
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

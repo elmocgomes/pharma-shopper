@@ -13,6 +13,9 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { cn } from "../lib/utils";
+import { CampaignTemplatesTab } from "../components/CampaignTemplatesTab";
+import { CampaignChatTab } from "../components/CampaignChatTab";
+import { CampaignHealthTab } from "../components/CampaignHealthTab";
 
 interface Campaign {
   id: string;
@@ -401,6 +404,7 @@ function CampaignDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const qc = useQueryClient();
   const nav = useNavigate();
   const [convPage, setConvPage] = useState(1);
+  const [activeTab, setActiveTab] = useState<"overview" | "templates" | "chat" | "health">("overview");
 
   const { data } = useQuery({
     queryKey: ["campaign", id],
@@ -486,6 +490,36 @@ function CampaignDetail({ id, onBack }: { id: string; onBack: () => void }) {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-1 bg-white rounded-xl border border-gray-200 p-1">
+        {(["overview", "templates", "chat", "health"] as const).map((tab) => {
+          const labels: Record<string, string> = { overview: "Visao Geral", templates: "Templates", chat: "Chat IA", health: "Saude" };
+          return (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                "flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                activeTab === tab
+                  ? "bg-green-50 text-green-700"
+                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-50",
+              )}
+            >
+              {labels[tab]}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === "templates" && <CampaignTemplatesTab campaignId={id} />}
+      {activeTab === "chat" && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <CampaignChatTab campaignId={id} />
+        </div>
+      )}
+      {activeTab === "health" && <CampaignHealthTab campaignId={id} />}
+
+      {activeTab === "overview" && <>
       {/* Progress bar */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="flex items-center justify-between mb-2">
@@ -568,6 +602,7 @@ function CampaignDetail({ id, onBack }: { id: string; onBack: () => void }) {
           </table>
         )}
       </div>
+      </>}
     </div>
   );
 }

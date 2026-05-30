@@ -13,6 +13,7 @@ import { campaigns } from "./campaigns.js";
 import { pharmacies } from "./pharmacies.js";
 import { waSessions } from "./wa-sessions.js";
 import { personas } from "./personas.js";
+import { conversationFlows } from "./conversation-flows.js";
 
 export const conversationStatusEnum = pgEnum("conversation_status", [
   "pending",
@@ -61,6 +62,11 @@ export const conversations = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+    flowId: uuid("flow_id").references(() => conversationFlows.id),
+    currentNodeId: text("current_node_id"),
+    nodeVisitCount: integer("node_visit_count").notNull().default(0),
+    treeVariables: jsonb("tree_variables").$type<Record<string, unknown>>(),
+    analysisStatus: text("analysis_status").notNull().default("pending"),
     followUpCount: integer("follow_up_count").notNull().default(0),
     retryCount: integer("retry_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
