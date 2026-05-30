@@ -300,13 +300,8 @@ export const campaignRoutes = new Hono<AppEnv>()
     const db = c.get("db");
     const [camp] = await db
       .delete(campaigns)
-      .where(
-        and(
-          eq(campaigns.id, c.req.param("id")),
-          eq(campaigns.status, "draft"),
-        ),
-      )
+      .where(eq(campaigns.id, c.req.param("id")))
       .returning();
-    if (!camp) return c.json({ error: "Not found or not in draft status" }, 404);
+    if (!camp) return c.json({ error: "Not found" }, 404);
     return c.json({ data: camp });
   });

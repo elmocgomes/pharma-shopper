@@ -423,6 +423,11 @@ function CampaignDetail({ id, onBack }: { id: string; onBack: () => void }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["campaign", id] }),
   });
 
+  const deleteMut = useMutation({
+    mutationFn: () => api.delete(`/campaigns/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["campaigns"] }); onBack(); },
+  });
+
   const camp = data?.data;
   const convs = convsData?.data ?? [];
   const convTotal = convsData?.total ?? 0;
@@ -468,6 +473,13 @@ function CampaignDetail({ id, onBack }: { id: string; onBack: () => void }) {
             <RotateCw className="w-4 h-4" /> Retomar
           </button>
         )}
+        <button
+          onClick={() => { if (confirm("Tem certeza que deseja excluir esta campanha?")) deleteMut.mutate(); }}
+          disabled={deleteMut.isPending}
+          className="flex items-center gap-1 px-4 py-2 bg-red-50 text-red-700 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors disabled:opacity-50"
+        >
+          <Trash2 className="w-4 h-4" /> Excluir
+        </button>
       </div>
 
       {/* KPIs */}
